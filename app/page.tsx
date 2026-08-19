@@ -7,6 +7,7 @@ import { combineReport, type ReportInputs, type ReportCategory } from '@/lib/sca
 import type { Grade } from '@/lib/scan/types';
 import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
+import type { RoutesScanResult } from '@/lib/scan/routes';
 import type { SecretsScanResult } from '@/lib/scan/secrets';
 import type { FundamentalsResult } from '@/lib/scan/fundamentals';
 import type { LighthouseResult } from '@/lib/scan/lighthouse';
@@ -97,8 +98,9 @@ export default function Home() {
         >('/api/scan/secrets')
       : Promise.resolve(null);
     const fundamentalsP = appUrl.trim() ? postScan<FundamentalsResult>('/api/scan/fundamentals') : Promise.resolve(null);
+    const routesP = appUrl.trim() ? postScan<RoutesScanResult>('/api/scan/routes') : Promise.resolve(null);
     try {
-      const [hdr, paths, secrets, fundamentals] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP]);
+      const [hdr, paths, secrets, fundamentals, routes] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, routesP]);
       if (appUrl.trim() && !hdr && !paths && !secrets && !fundamentals) {
         setError('Could not reach that app URL — is it live and public?');
       }
@@ -121,7 +123,7 @@ export default function Home() {
       ]);
       if (secrets?.firebase) setAutoDetected(true);
 
-      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, secrets, fundamentals };
+      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, secrets, fundamentals };
       setInputs(base);
 
       // Lighthouse is slow (10-30s) — render the security card now, fill it in when

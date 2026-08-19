@@ -5,6 +5,7 @@ import type { SecretsScanResult } from './secrets';
 import type { FundamentalsResult } from './fundamentals';
 import type { LighthouseResult } from './lighthouse';
 import type { FirebaseScanResult } from './firebase';
+import type { RoutesScanResult } from './routes';
 import { worstGrade } from './grade';
 
 export type CategoryGroup = 'security' | 'basics' | 'performance';
@@ -43,6 +44,7 @@ export interface ReportInputs {
   fundamentals?: FundamentalsResult | null;
   lighthouse?: LighthouseResult | null;
   firebase?: FirebaseScanResult | null;
+  routes?: RoutesScanResult | null;
 }
 
 const VERDICT: Record<Grade, string> = {
@@ -166,6 +168,23 @@ export function combineReport(inp: ReportInputs): Report {
     }
     categories.push({ key: 'secrets', group: 'security', label: 'Exposed secrets', grade: s.grade, summary: s.summary, checks });
   }
+  if (inp.routes) {
+    const r = inp.routes;
+    issueCount += r.exposed.length;
+    securityGrades.push(r.grade);
+    // Only report routes we actually learned something about — listing ten
+    // "absent" paths would be noise, and "inconclusive" is not an accusation.
+    const interesting = r.findings.filter((f) => f.verdict !== 'absent');
+    const checks: CheckItem[] = interesting.length
+      ? interesting.map((f) => ({
+          label: f.label,
+          pass: f.verdict !== 'exposed',
+          detail: f.verdict === 'inconclusive' ? `couldn't be determined — ${f.detail}` : f.detail,
+        }))
+      : [{ label: 'No admin or debug routes reachable', pass: true, detail: `${r.findings.length} common paths checked` }];
+    categories.push({ key: 'routes', group: 'security', label: 'Admin & debug routes', grade: r.grade, summary: r.summary, checks });
+  }
+
   if (inp.paths) {
     const p = inp.paths;
     issueCount += p.exposed.length;
