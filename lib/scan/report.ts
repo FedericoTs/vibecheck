@@ -1,9 +1,10 @@
 import type { SupabaseScanResult, Grade } from './types';
 import type { HeadersScanResult } from './headers';
+import type { PathsScanResult } from './paths';
 import { worstGrade } from './grade';
 
 export interface ReportCategory {
-  key: 'supabase' | 'headers';
+  key: 'supabase' | 'headers' | 'paths';
   label: string;
   grade: Grade | null; // null = ran but errored (not counted toward the overall grade)
   summary: string;
@@ -29,10 +30,23 @@ const VERDICT: Record<Grade, string> = {
 export function combineReport(
   sb: SupabaseScanResult | null,
   hdr: HeadersScanResult | null,
+  paths: PathsScanResult | null = null,
 ): Report {
   const categories: ReportCategory[] = [];
   const graded: Grade[] = [];
   let issueCount = 0;
+
+  if (paths) {
+    issueCount += paths.exposed.length;
+    graded.push(paths.grade);
+    categories.push({
+      key: 'paths',
+      label: 'Exposed files',
+      grade: paths.grade,
+      summary: paths.summary,
+      findings: paths.exposed.map((f) => `${f.label} — publicly served`),
+    });
+  }
 
   if (sb) {
     if (sb.ok) {

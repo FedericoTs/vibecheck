@@ -5,6 +5,7 @@ import { scanSupabase } from '@/lib/scan/supabase';
 import { combineReport, type Report } from '@/lib/scan/report';
 import type { Grade } from '@/lib/scan/types';
 import type { HeadersScanResult } from '@/lib/scan/headers';
+import type { PathsScanResult } from '@/lib/scan/paths';
 
 const GITHUB_URL = 'https://github.com/FedericoTs/vibecheck';
 const X_URL = 'https://x.com/FedericoTs'; // TODO: set the real handle before launch
@@ -35,21 +36,26 @@ export default function Home() {
     }
     setLoading(true);
     setReport(null);
-    const headersP: Promise<HeadersScanResult | null> = appUrl.trim()
-      ? fetch('/api/scan/headers', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ url: appUrl }),
-        })
-          .then((r) => r.json())
-          .then((j) => (j?.error ? (setError(`Headers: ${j.error}`), null) : (j as HeadersScanResult)))
-          .catch(() => (setError('Could not reach that app URL.'), null))
-      : Promise.resolve(null);
+    const postScan = <T,>(endpoint: string): Promise<T | null> =>
+      fetch(endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: appUrl }),
+      })
+        .then((r) => r.json())
+        .then((j) => (j?.error ? null : (j as T)))
+        .catch(() => null);
+
+    const headersP = appUrl.trim() ? postScan<HeadersScanResult>('/api/scan/headers') : Promise.resolve(null);
+    const pathsP = appUrl.trim() ? postScan<PathsScanResult>('/api/scan/paths') : Promise.resolve(null);
     const sbP =
       sbUrl.trim() && anonKey.trim() ? scanSupabase({ url: sbUrl, anonKey }) : Promise.resolve(null);
     try {
-      const [hdr, sb] = await Promise.all([headersP, sbP]);
-      setReport(combineReport(sb, hdr));
+      const [hdr, paths, sb] = await Promise.all([headersP, pathsP, sbP]);
+      if (appUrl.trim() && !hdr && !paths) {
+        setError('Could not reach that app URL — is it live and public?');
+      }
+      setReport(combineReport(sb, hdr, paths));
     } finally {
       setLoading(false);
     }
