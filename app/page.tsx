@@ -56,11 +56,11 @@ export default function Home() {
   }
 
   function share() {
-    const g = report?.overallGrade;
-    const text = `I ran vibecheck on my app — grade ${g}${
-      report?.issueCount ? `, ${report.issueCount} issue${report.issueCount === 1 ? '' : 's'} found` : ''
-    }. Check yours: ${GITHUB_URL}`;
-    navigator.clipboard?.writeText(text).then(() => {
+    if (!report) return;
+    // A shareable link that unfurls into the OG card — grade + issue count only,
+    // never the host, key, or findings.
+    const url = `${window.location.origin}/r?g=${report.overallGrade}&i=${report.issueCount}`;
+    navigator.clipboard?.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     });
