@@ -6,6 +6,7 @@ import { combineReport, type Report } from '@/lib/scan/report';
 import type { Grade } from '@/lib/scan/types';
 import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
+import type { SecretsScanResult } from '@/lib/scan/secrets';
 
 const GITHUB_URL = 'https://github.com/FedericoTs/vibecheck';
 const X_URL = 'https://x.com/FedericoTs'; // TODO: set the real handle before launch
@@ -48,14 +49,15 @@ export default function Home() {
 
     const headersP = appUrl.trim() ? postScan<HeadersScanResult>('/api/scan/headers') : Promise.resolve(null);
     const pathsP = appUrl.trim() ? postScan<PathsScanResult>('/api/scan/paths') : Promise.resolve(null);
+    const secretsP = appUrl.trim() ? postScan<SecretsScanResult>('/api/scan/secrets') : Promise.resolve(null);
     const sbP =
       sbUrl.trim() && anonKey.trim() ? scanSupabase({ url: sbUrl, anonKey }) : Promise.resolve(null);
     try {
-      const [hdr, paths, sb] = await Promise.all([headersP, pathsP, sbP]);
-      if (appUrl.trim() && !hdr && !paths) {
+      const [hdr, paths, secrets, sb] = await Promise.all([headersP, pathsP, secretsP, sbP]);
+      if (appUrl.trim() && !hdr && !paths && !secrets) {
         setError('Could not reach that app URL — is it live and public?');
       }
-      setReport(combineReport(sb, hdr, paths));
+      setReport(combineReport(sb, hdr, paths, secrets));
     } finally {
       setLoading(false);
     }

@@ -1,10 +1,11 @@
 import type { SupabaseScanResult, Grade } from './types';
 import type { HeadersScanResult } from './headers';
 import type { PathsScanResult } from './paths';
+import type { SecretsScanResult } from './secrets';
 import { worstGrade } from './grade';
 
 export interface ReportCategory {
-  key: 'supabase' | 'headers' | 'paths';
+  key: 'supabase' | 'secrets' | 'paths' | 'headers';
   label: string;
   grade: Grade | null; // null = ran but errored (not counted toward the overall grade)
   summary: string;
@@ -26,28 +27,18 @@ const VERDICT: Record<Grade, string> = {
   F: 'Wide open. Anyone can read your data or walk through the front door.',
 };
 
-/** Merge the two scans into one report card. Only categories that produced a real grade count toward the overall. */
+/** Merge the scans into one report card. Only categories with a real grade count toward the overall. */
 export function combineReport(
   sb: SupabaseScanResult | null,
   hdr: HeadersScanResult | null,
   paths: PathsScanResult | null = null,
+  secrets: SecretsScanResult | null = null,
 ): Report {
   const categories: ReportCategory[] = [];
   const graded: Grade[] = [];
   let issueCount = 0;
 
-  if (paths) {
-    issueCount += paths.exposed.length;
-    graded.push(paths.grade);
-    categories.push({
-      key: 'paths',
-      label: 'Exposed files',
-      grade: paths.grade,
-      summary: paths.summary,
-      findings: paths.exposed.map((f) => `${f.label} — publicly served`),
-    });
-  }
-
+  // Ordered most-severe first: data, secret keys, exposed files, headers.
   if (sb) {
     if (sb.ok) {
       const exposed = sb.findings.filter((f) => f.exposed);
@@ -65,6 +56,30 @@ export function combineReport(
     } else {
       categories.push({ key: 'supabase', label: 'Database exposure', grade: null, summary: sb.error ?? 'Could not scan', findings: [] });
     }
+  }
+
+  if (secrets) {
+    issueCount += secrets.findings.length;
+    graded.push(secrets.grade);
+    categories.push({
+      key: 'secrets',
+      label: 'Exposed secrets',
+      grade: secrets.grade,
+      summary: secrets.summary,
+      findings: secrets.findings.map((f) => `${f.label} — ${f.redacted}`),
+    });
+  }
+
+  if (paths) {
+    issueCount += paths.exposed.length;
+    graded.push(paths.grade);
+    categories.push({
+      key: 'paths',
+      label: 'Exposed files',
+      grade: paths.grade,
+      summary: paths.summary,
+      findings: paths.exposed.map((f) => `${f.label} — publicly served`),
+    });
   }
 
   if (hdr) {
