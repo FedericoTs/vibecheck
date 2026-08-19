@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { scanSupabase } from '@/lib/scan/supabase';
+import { scanFirebase, type FirebaseConfig } from '@/lib/scan/firebase';
 import { combineReport, type ReportInputs, type ReportCategory } from '@/lib/scan/report';
 import type { Grade } from '@/lib/scan/types';
 import type { HeadersScanResult } from '@/lib/scan/headers';
@@ -87,7 +88,13 @@ export default function Home() {
     const headersP = appUrl.trim() ? postScan<HeadersScanResult>('/api/scan/headers') : Promise.resolve(null);
     const pathsP = appUrl.trim() ? postScan<PathsScanResult>('/api/scan/paths') : Promise.resolve(null);
     const secretsP = appUrl.trim()
-      ? postScan<SecretsScanResult & { discovered?: { url: string; anonKey: string } | null }>('/api/scan/secrets')
+      ? postScan<
+          SecretsScanResult & {
+            discovered?: { url: string; anonKey: string } | null;
+            firebase?: FirebaseConfig | null;
+            firebaseCollections?: string[];
+          }
+        >('/api/scan/secrets')
       : Promise.resolve(null);
     const fundamentalsP = appUrl.trim() ? postScan<FundamentalsResult>('/api/scan/fundamentals') : Promise.resolve(null);
     try {
@@ -104,9 +111,17 @@ export default function Home() {
           ? { url: sbUrl, anonKey }
           : secrets?.discovered ?? null;
       if (creds) setAutoDetected(!(sbUrl.trim() && anonKey.trim()));
-      const sb = creds ? await scanSupabase(creds) : null;
 
-      const base: ReportInputs = { supabase: sb, headers: hdr, paths, secrets, fundamentals };
+      // Supabase and Firebase both probe from HERE, in the browser.
+      const [sb, fb] = await Promise.all([
+        creds ? scanSupabase(creds) : Promise.resolve(null),
+        secrets?.firebase
+          ? scanFirebase({ config: secrets.firebase, collections: secrets.firebaseCollections }).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      if (secrets?.firebase) setAutoDetected(true);
+
+      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, secrets, fundamentals };
       setInputs(base);
 
       // Lighthouse is slow (10-30s) — render the security card now, fill it in when
@@ -187,7 +202,7 @@ export default function Home() {
                 onClick={() => setShowDb(true)}
                 className="block w-full border-b border-line px-4 py-3 text-left font-mono text-xs text-muted hover:text-ink transition-colors"
               >
-                + Supabase project <span className="text-faint">— optional, we auto-detect it from your app</span>
+                + Supabase project <span className="text-faint">— optional; Supabase &amp; Firebase are auto-detected</span>
               </button>
             ) : (
               <div className="border-b border-line p-4 space-y-3">
@@ -255,8 +270,8 @@ export default function Home() {
 
           {autoDetected && (
             <p className="mt-3 font-mono text-xs text-muted">
-              <span className="text-safe">✓</span> Found the Supabase project in your app&apos;s own bundle
-              and probed it <span className="text-ink">from your browser</span>.
+              <span className="text-safe">✓</span> Found your backend in the app&apos;s own bundle and probed
+              it <span className="text-ink">from your browser</span> — nothing was sent to our servers.
             </p>
           )}
 

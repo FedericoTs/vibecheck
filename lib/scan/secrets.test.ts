@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findSecrets, jwtRole, redact, gradeSecrets, isSourceMap, type SecretFinding } from './secrets';
+import { findSecrets, jwtRole, redact, gradeSecrets, isSourceMap, countPublicGoogleKeys, type SecretFinding } from './secrets';
 
 const b64url = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const jwt = (payload: object) => `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(payload)}.abcdefghij`;
@@ -62,6 +62,16 @@ describe('findSecrets — precision (false positives are unacceptable)', () => {
 
   it('does not flag a harmless postgres URL with no credentials', () => {
     expect(findSecrets('postgres://localhost:5432/dev').map((f) => f.id)).not.toContain('db-url');
+  });
+
+  it('REGRESSION: browser Google/Firebase AIza keys are never reported as leaked secrets', () => {
+    // Found live on firebase.google.com: 9 AIza keys were flagged as "secrets".
+    // They are public by design (referrer-restricted), so flagging them would
+    // give every Firebase/Maps app a false alarm and a wrong grade.
+    const keys = 'AIzaSyA1234567890abcdefghijklmnopqrstuv AIzaSyB1234567890abcdefghijklmnopqrstuv';
+    expect(findSecrets(keys)).toEqual([]);
+    expect(countPublicGoogleKeys(keys)).toBe(2); // still counted, as advisory info
+    expect(countPublicGoogleKeys('no keys here')).toBe(0);
   });
 });
 

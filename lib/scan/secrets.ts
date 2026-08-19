@@ -26,9 +26,19 @@ export interface SecretsScanResult {
   findings: SecretFinding[];
   /** publicly served .js.map files — these republish your original source code. */
   sourceMaps?: { exposed: string[]; checked: boolean };
+  /** advisory: browser-side Google/Firebase keys, which are public by design. */
+  publicGoogleKeys?: number;
   grade: Grade;
   score: number;
   summary: string;
+}
+
+/**
+ * Browser-side Google/Firebase API keys. These are meant to be public, so this
+ * is advisory only — the actionable question is whether they are referrer-restricted.
+ */
+export function countPublicGoogleKeys(text: string): number {
+  return new Set([...text.matchAll(/\bAIza[0-9A-Za-z_-]{35}\b/g)].map((m) => m[0])).size;
 }
 
 /** Is this response body an actual source map (not an SPA HTML fallback)? */
@@ -54,7 +64,11 @@ const RULES: SecretRule[] = [
   { id: 'anthropic', label: 'Anthropic API key', severity: 'high', regex: /\bsk-ant-[A-Za-z0-9_-]{24,}/g },
   { id: 'openai', label: 'OpenAI API key', severity: 'high', regex: /\bsk-(?:proj-)?[A-Za-z0-9]{40,}\b/g },
   { id: 'private-key', label: 'Private key', severity: 'high', regex: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g },
-  { id: 'google-api', label: 'Google API key (verify it is restricted)', severity: 'medium', regex: /\bAIza[0-9A-Za-z_-]{35}\b/g },
+  // NB: browser-side Google/Firebase `AIza…` keys are deliberately NOT here.
+  // They are public by design (secured by HTTP-referrer restrictions, not
+  // secrecy), so flagging them would give every Firebase or Maps app a false
+  // alarm. They are surfaced as advisory information instead — see
+  // countPublicGoogleKeys.
   { id: 'slack-token', label: 'Slack token', severity: 'high', regex: /\bxox[baprs]-[A-Za-z0-9-]{10,}/g },
   { id: 'slack-webhook', label: 'Slack webhook URL', severity: 'high', regex: /https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]{20,}/g },
   { id: 'sendgrid', label: 'SendGrid API key', severity: 'high', regex: /\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/g },

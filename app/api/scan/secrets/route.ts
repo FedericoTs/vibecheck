@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { safeFetch, UA } from '@/lib/scan/fetch';
-import { findSecrets, gradeSecrets, isSourceMap, type SecretFinding } from '@/lib/scan/secrets';
+import { findSecrets, gradeSecrets, isSourceMap, countPublicGoogleKeys, type SecretFinding } from '@/lib/scan/secrets';
 import { discoverSupabase } from '@/lib/scan/discover';
+import { discoverFirebase, extractCollections } from '@/lib/scan/firebase';
 
 export const runtime = 'nodejs';
 
@@ -81,7 +82,10 @@ export async function POST(request: Request): Promise<Response> {
   // Locate the Supabase project the app already exposes publicly, so the browser
   // can run the database check without the user pasting anything. We only find
   // it here — the table probes still run client-side.
-  const discovered = discoverSupabase([html, ...bundles].join('\n'));
+  const allCode = [html, ...bundles].join('\n');
+  const discovered = discoverSupabase(allCode);
+  const firebase = discoverFirebase(allCode);
+  const firebaseCollections = firebase ? extractCollections(allCode) : [];
 
   // Are the source maps published? A .js.map republishes the original source —
   // comments, unminified logic, sometimes keys that minification hid.
@@ -106,6 +110,9 @@ export async function POST(request: Request): Promise<Response> {
   return NextResponse.json({
     ...gradeSecrets(findings, finalUrl.host),
     sourceMaps: { exposed: exposedMaps, checked: mapTargets.length > 0 },
+    publicGoogleKeys: countPublicGoogleKeys(allCode),
     discovered,
+    firebase,
+    firebaseCollections,
   });
 }

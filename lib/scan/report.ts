@@ -4,6 +4,7 @@ import type { PathsScanResult } from './paths';
 import type { SecretsScanResult } from './secrets';
 import type { FundamentalsResult } from './fundamentals';
 import type { LighthouseResult } from './lighthouse';
+import type { FirebaseScanResult } from './firebase';
 import { worstGrade } from './grade';
 
 export type CategoryGroup = 'security' | 'basics' | 'performance';
@@ -41,6 +42,7 @@ export interface ReportInputs {
   secrets?: SecretsScanResult | null;
   fundamentals?: FundamentalsResult | null;
   lighthouse?: LighthouseResult | null;
+  firebase?: FirebaseScanResult | null;
 }
 
 const VERDICT: Record<Grade, string> = {
@@ -106,6 +108,28 @@ export function combineReport(inp: ReportInputs): Report {
       categories.push({ key: 'supabase', group: 'security', label: 'Database exposure', grade: null, summary: sb.error ?? 'Could not scan', checks: [] });
     }
   }
+  if (inp.firebase?.ok) {
+    const f = inp.firebase;
+    issueCount += f.exposedCount + (f.rtdbOpen ? 1 : 0);
+    securityGrades.push(f.grade);
+    const checks: CheckItem[] = [];
+    if (f.rtdbChecked) {
+      checks.push({
+        label: 'Realtime Database locked down',
+        pass: !f.rtdbOpen,
+        detail: f.rtdbOpen ? 'the entire database is readable by anyone' : 'not readable by anonymous visitors',
+      });
+    }
+    for (const c of f.collections) {
+      checks.push({
+        label: `${c.collection} (Firestore)`,
+        pass: !c.exposed,
+        detail: c.exposed ? 'documents readable by anyone' : 'not readable by anonymous visitors',
+      });
+    }
+    categories.push({ key: 'firebase', group: 'security', label: 'Firebase exposure', grade: f.grade, summary: f.summary, checks });
+  }
+
   if (inp.secrets) {
     const s = inp.secrets;
     issueCount += s.findings.length;
@@ -119,6 +143,15 @@ export function combineReport(inp: ReportInputs): Report {
             detail: 'checked the HTML + JS for service_role, Stripe, AWS, OpenAI, Anthropic, GitHub & private keys',
           },
         ];
+    if (s.publicGoogleKeys) {
+      // Advisory, never a failure: these keys are public by design. The real
+      // question is whether they're referrer-restricted, which we can't see.
+      checks.push({
+        label: 'Google/Firebase keys are public by design',
+        pass: true,
+        detail: `${s.publicGoogleKeys} found — that's normal; just make sure they're restricted by HTTP referrer in Google Cloud`,
+      });
+    }
     if (s.sourceMaps?.checked) {
       const n = s.sourceMaps.exposed.length;
       if (n > 0) issueCount += n;
