@@ -1,0 +1,29 @@
+import type { Grade, GradeResult } from './types';
+
+/**
+ * Grade the Supabase public-read result. A publicly-readable table with data is
+ * a real breach, so the scale is deliberately harsh: any exposure fails.
+ */
+export function gradeExposure(exposedCount: number, tablesFound: number): GradeResult {
+  if (tablesFound === 0) {
+    return { grade: 'C', score: 60, label: 'No tables were reachable to test' };
+  }
+  if (exposedCount === 0) {
+    return { grade: 'A', score: 100, label: 'No tables are readable by anonymous visitors' };
+  }
+  if (exposedCount === 1) {
+    return { grade: 'D', score: 45, label: '1 table is readable by anyone' };
+  }
+  if (exposedCount <= 3) {
+    return { grade: 'F', score: 25, label: `${exposedCount} tables are readable by anyone` };
+  }
+  return { grade: 'F', score: 10, label: `${exposedCount} tables are readable by anyone` };
+}
+
+const ORDER: Grade[] = ['A', 'B', 'C', 'D', 'F'];
+
+/** Worst (lowest) grade across categories — an overall report card is only as good as its weakest scan. */
+export function worstGrade(grades: Grade[]): Grade {
+  if (grades.length === 0) return 'C';
+  return grades.reduce((worst, g) => (ORDER.indexOf(g) > ORDER.indexOf(worst) ? g : worst), 'A' as Grade);
+}
