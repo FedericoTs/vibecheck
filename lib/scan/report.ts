@@ -8,6 +8,7 @@ import type { FirebaseScanResult } from './firebase';
 import type { RoutesScanResult } from './routes';
 import type { AiSurfaceResult } from './ai-surface';
 import type { PrivacyResult } from './privacy';
+import type { EmailAuthResult } from './email-auth';
 import { worstGrade } from './grade';
 
 export type CategoryGroup = 'security' | 'privacy' | 'basics' | 'performance';
@@ -49,6 +50,7 @@ export interface ReportInputs {
   routes?: RoutesScanResult | null;
   ai?: AiSurfaceResult | null;
   privacy?: PrivacyResult | null;
+  email?: EmailAuthResult | null;
 }
 
 const VERDICT: Record<Grade, string> = {
@@ -107,6 +109,21 @@ export function combineReport(inp: ReportInputs): Report {
             n === 0
               ? 'none exposed on the public API'
               : `${n} callable by anyone: ${sb.rpc.exposed.slice(0, 4).join(', ')}${n > 4 ? '…' : ''}`,
+        });
+      }
+      // Auth configuration: only the dangerous COMBINATION is a failure.
+      if (sb.auth?.checked) {
+        const a = sb.auth;
+        const risky = a.autoConfirm && a.signupsOpen;
+        if (risky) issueCount += 1;
+        checks.push({
+          label: 'Email confirmation required for new accounts',
+          pass: !risky,
+          detail: risky
+            ? 'signups are open AND auto-confirmed — anyone can register as any email address without proving they own it'
+            : a.autoConfirm
+              ? 'auto-confirm is on, but signups are closed'
+              : 'new accounts must confirm their email',
         });
       }
       categories.push({ key: 'supabase', group: 'security', label: 'Database exposure', grade: sb.grade, summary: sb.summary, checks });
@@ -221,6 +238,14 @@ export function combineReport(inp: ReportInputs): Report {
   }
 
   // ── basics + performance (secondary — own grades, never drag security) ─
+  if (inp.email) {
+    const e = inp.email;
+    issueCount += e.failed.length;
+    securityGrades.push(e.grade);
+    const checks: CheckItem[] = e.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail }));
+    categories.push({ key: 'email', group: 'security', label: 'Email spoofing protection', grade: e.grade, summary: e.summary, checks });
+  }
+
   if (inp.privacy) {
     const pr = inp.privacy;
     // Own group, own grade: EU privacy is NOT a security finding, and must not

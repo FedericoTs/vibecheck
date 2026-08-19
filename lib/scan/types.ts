@@ -19,6 +19,15 @@ export interface BucketFinding {
   checked: boolean;
 }
 
+export interface AuthConfigFinding {
+  checked: boolean;
+  /** anyone can create an account (often fine, but it compounds autoConfirm). */
+  signupsOpen: boolean;
+  /** accounts are usable WITHOUT proving the email address belongs to them. */
+  autoConfirm: boolean;
+  providers: string[];
+}
+
 export interface RpcFinding {
   /** database functions PostgREST exposes to the public API surface. */
   exposed: string[];
@@ -34,6 +43,7 @@ export interface SupabaseScanResult {
   exposedCount: number;
   buckets?: BucketFinding;
   rpc?: RpcFinding;
+  auth?: AuthConfigFinding;
   grade: Grade;
   /** a human summary line, safe to show and share. */
   summary: string;

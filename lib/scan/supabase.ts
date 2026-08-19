@@ -1,4 +1,4 @@
-import type { Fetchy, SupabaseScanResult, TableFinding, BucketFinding, RpcFinding } from './types';
+import type { Fetchy, SupabaseScanResult, TableFinding, BucketFinding, RpcFinding, AuthConfigFinding } from './types';
 import { gradeExposure } from './grade';
 
 /**
@@ -69,6 +69,29 @@ export function parseRpcFromOpenApi(doc: unknown): string[] {
     if (m) out.push(m[1]);
   }
   return [...new Set(out)].sort();
+}
+
+/**
+ * Supabase publishes its auth configuration at /auth/v1/settings for any client
+ * holding the public key — it is how the SDK knows which providers to show. The
+ * dangerous combination is open signups PLUS autoconfirm: accounts become usable
+ * without ever proving the email address belongs to the person, so anyone can
+ * register as anyone, and any per-email logic can be spoofed.
+ */
+export function classifyAuthConfig(status: number, body: unknown): AuthConfigFinding {
+  if (status !== 200 || !body || typeof body !== 'object') {
+    return { checked: false, signupsOpen: false, autoConfirm: false, providers: [] };
+  }
+  const b = body as { disable_signup?: boolean; mailer_autoconfirm?: boolean; phone_autoconfirm?: boolean; external?: Record<string, unknown> };
+  const providers = b.external && typeof b.external === 'object'
+    ? Object.entries(b.external).filter(([, v]) => v === true).map(([k]) => k)
+    : [];
+  return {
+    checked: true,
+    signupsOpen: b.disable_signup === false,
+    autoConfirm: b.mailer_autoconfirm === true || b.phone_autoconfirm === true,
+    providers,
+  };
 }
 
 /** Interpret a storage bucket-list response. Anon should NOT be able to enumerate buckets. */
@@ -196,6 +219,21 @@ export async function scanSupabase(opts: ScanOpts): Promise<SupabaseScanResult> 
     /* storage unreachable — leave unchecked */
   }
 
+  // 4) auth configuration (public by design, read-only)
+  let auth: AuthConfigFinding = { checked: false, signupsOpen: false, autoConfirm: false, providers: [] };
+  try {
+    const res = await fetchy(`${base}/auth/v1/settings`, { headers: anonHeaders(anonKey) });
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* non-JSON */
+    }
+    auth = classifyAuthConfig(res.status, body);
+  } catch {
+    /* auth endpoint unreachable — leave unchecked */
+  }
+
   // Bucket enumeration is a real exposure; fold it into the grade.
   const extra = (buckets.enumerable ? 1 : 0) + buckets.publicBuckets.length;
   const grade = gradeExposure(exposed.length + extra, tables.length + (buckets.checked ? 1 : 0));
@@ -208,6 +246,7 @@ export async function scanSupabase(opts: ScanOpts): Promise<SupabaseScanResult> 
     exposedCount: exposed.length,
     buckets,
     rpc,
+    auth,
     grade: grade.grade,
     summary:
       exposed.length === 0 && extra === 0

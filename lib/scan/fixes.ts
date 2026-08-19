@@ -31,6 +31,8 @@ const CATEGORY_FIX: Record<string, string> = {
     'Put this endpoint behind authentication AND a per-user rate limit. An open AI endpoint lets strangers spend your model credits (or use your key as a free relay), and an MCP server that answers `tools/list` anonymously hands attackers your capability map. Require a session on the server, cap requests per user, and cap max_tokens per request.',
   privacy:
     'Do not load trackers or set analytics cookies until the visitor has actively opted in. Gate every analytics/marketing script behind a consent choice (default to OFF), or switch to cookieless analytics such as Plausible/Umami which need no banner at all.',
+  email:
+    'Publish SPF and DMARC DNS records for your domain. Without them anyone can send email that appears to come from you — including password-reset lookalikes aimed at your own users.',
   fundamentals: 'Add the missing tag to the page <head>.',
   lighthouse:
     'Improve this Lighthouse category — the report at pagespeed.web.dev lists the specific opportunities for this page.',
@@ -45,6 +47,10 @@ const LABEL_FIX: Array<[RegExp, string]> = [
   [/privacy policy/i, 'Add a privacy policy page and link it from the footer, stating what you collect, why, on what legal basis, who you share it with, and how to request deletion.'],
   [/mcp/i, 'Require authentication on your MCP server before it will answer `tools/list` or run a tool. An MCP endpoint that describes its tools to anonymous callers is handing an attacker a map of your internal capabilities — and many such servers can also execute code.'],
   [/chat endpoint|ai endpoint|completion endpoint|generation endpoint/i, 'Require a signed-in session on the server before calling the model, add a per-user rate limit, and cap max_tokens. As it stands anyone can run completions on your account — the bill is yours.'],
+  [/spf record/i, 'Add a TXT record at your domain apex listing who may send mail for you, ending in -all, e.g. `v=spf1 include:_spf.google.com -all`. If you send no mail at all, publish `v=spf1 -all`.'],
+  [/dmarc record published/i, 'Add a TXT record at `_dmarc.yourdomain.com`, starting at monitor mode: `v=DMARC1; p=none; rua=mailto:you@yourdomain.com`. Watch the reports for a week, then tighten to quarantine and then reject.'],
+  [/dmarc actually enforced/i, 'Move your DMARC policy from p=none to p=quarantine, and then p=reject once your reports show only your own senders passing. p=none only monitors — forged mail still reaches inboxes.'],
+  [/email confirmation/i, 'Turn OFF auto-confirm in Supabase (Authentication -> Providers -> Email -> "Confirm email"), so a new account is only usable once the person proves they control the address. Leaving it on with open signups means anyone can register as anyone — including addresses you treat as trusted.'],
   [/storage bucket/i, 'Make the buckets private and add Storage policies so only the owning user can read their objects. Anonymous visitors should not be able to list buckets at all.'],
   [/database functions|rpc/i, 'Review each publicly-callable function and revoke execute from the anon role for anything not meant to be public: `revoke execute on function <fn> from anon;`. Pay special attention to SECURITY DEFINER functions, which run with the owner privileges.'],
   [/source map/i, 'Disable source maps in your production build (Next.js: `productionBrowserSourceMaps: false`; Vite: `build.sourcemap: false`) so your original source is not downloadable.'],

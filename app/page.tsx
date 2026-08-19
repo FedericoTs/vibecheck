@@ -11,6 +11,7 @@ import type { PathsScanResult } from '@/lib/scan/paths';
 import type { RoutesScanResult } from '@/lib/scan/routes';
 import type { AiSurfaceResult } from '@/lib/scan/ai-surface';
 import type { PrivacyResult } from '@/lib/scan/privacy';
+import type { EmailAuthResult } from '@/lib/scan/email-auth';
 import type { SecretsScanResult } from '@/lib/scan/secrets';
 import type { FundamentalsResult } from '@/lib/scan/fundamentals';
 import type { LighthouseResult } from '@/lib/scan/lighthouse';
@@ -112,8 +113,9 @@ export default function Home() {
     const routesP = appUrl.trim() ? postScan<RoutesScanResult>('/api/scan/routes') : Promise.resolve(null);
     const aiP = appUrl.trim() ? postScan<AiSurfaceResult>('/api/scan/ai') : Promise.resolve(null);
     const privacyP = appUrl.trim() ? postScan<PrivacyResult>('/api/scan/privacy') : Promise.resolve(null);
+    const emailP = appUrl.trim() ? postScan<EmailAuthResult>('/api/scan/email') : Promise.resolve(null);
     try {
-      const [hdr, paths, secrets, fundamentals, routes, ai, privacy] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, routesP, aiP, privacyP]);
+      const [hdr, paths, secrets, fundamentals, routes, ai, privacy, email] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, routesP, aiP, privacyP, emailP]);
       if (appUrl.trim() && !hdr && !paths && !secrets && !fundamentals) {
         setError('Could not reach that app URL — is it live and public?');
       }
@@ -136,7 +138,7 @@ export default function Home() {
       ]);
       if (secrets?.firebase) setAutoDetected(true);
 
-      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals, privacy };
+      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals, privacy, email };
       setInputs(base);
 
       // Lighthouse is slow (10-30s) — render the security card now, fill it in when

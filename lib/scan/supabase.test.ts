@@ -6,6 +6,7 @@ import {
   isExposed,
   parseRpcFromOpenApi,
   classifyBuckets,
+  classifyAuthConfig,
   scanSupabase,
 } from './supabase';
 import type { Fetchy } from './types';
@@ -42,6 +43,24 @@ describe('pure helpers', () => {
     const doc = { paths: { '/': {}, '/users': {}, '/rpc/wipe_org': {}, '/rpc/get_stats': {} } };
     expect(parseRpcFromOpenApi(doc)).toEqual(['get_stats', 'wipe_org']);
     expect(parseRpcFromOpenApi({})).toEqual([]);
+  });
+
+  it('classifyAuthConfig reads the public auth settings; only the risky COMBINATION matters', () => {
+    const risky = classifyAuthConfig(200, { disable_signup: false, mailer_autoconfirm: true, external: { google: true, github: false } });
+    expect(risky.checked).toBe(true);
+    expect(risky.signupsOpen).toBe(true);
+    expect(risky.autoConfirm).toBe(true);
+    expect(risky.providers).toEqual(['google']); // only enabled providers
+
+    const safe = classifyAuthConfig(200, { disable_signup: false, mailer_autoconfirm: false });
+    expect(safe.autoConfirm).toBe(false);
+
+    // phone autoconfirm counts too
+    expect(classifyAuthConfig(200, { phone_autoconfirm: true }).autoConfirm).toBe(true);
+
+    // unreachable / non-JSON must not fabricate a finding
+    expect(classifyAuthConfig(401, null).checked).toBe(false);
+    expect(classifyAuthConfig(200, 'nope').checked).toBe(false);
   });
 
   it('classifyBuckets flags enumeration + public buckets, tolerates a blocked response', () => {
