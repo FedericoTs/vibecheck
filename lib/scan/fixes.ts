@@ -27,6 +27,8 @@ const CATEGORY_FIX: Record<string, string> = {
     'Stop serving this file publicly. Remove it from the deployed output (add it to .gitignore / .vercelignore / your build ignore list) and redeploy. If it contained credentials, rotate them — assume they were read.',
   headers:
     "Add this response header at the edge — in next.config.js headers(), a _headers file, or your host's header settings.",
+  ai:
+    'Put this endpoint behind authentication AND a per-user rate limit. An open AI endpoint lets strangers spend your model credits (or use your key as a free relay), and an MCP server that answers `tools/list` anonymously hands attackers your capability map. Require a session on the server, cap requests per user, and cap max_tokens per request.',
   fundamentals: 'Add the missing tag to the page <head>.',
   lighthouse:
     'Improve this Lighthouse category — the report at pagespeed.web.dev lists the specific opportunities for this page.',
@@ -34,6 +36,8 @@ const CATEGORY_FIX: Record<string, string> = {
 
 /** More specific guidance when the label tells us exactly what failed. */
 const LABEL_FIX: Array<[RegExp, string]> = [
+  [/mcp/i, 'Require authentication on your MCP server before it will answer `tools/list` or run a tool. An MCP endpoint that describes its tools to anonymous callers is handing an attacker a map of your internal capabilities — and many such servers can also execute code.'],
+  [/chat endpoint|ai endpoint|completion endpoint|generation endpoint/i, 'Require a signed-in session on the server before calling the model, add a per-user rate limit, and cap max_tokens. As it stands anyone can run completions on your account — the bill is yours.'],
   [/storage bucket/i, 'Make the buckets private and add Storage policies so only the owning user can read their objects. Anonymous visitors should not be able to list buckets at all.'],
   [/database functions|rpc/i, 'Review each publicly-callable function and revoke execute from the anon role for anything not meant to be public: `revoke execute on function <fn> from anon;`. Pay special attention to SECURITY DEFINER functions, which run with the owner privileges.'],
   [/source map/i, 'Disable source maps in your production build (Next.js: `productionBrowserSourceMaps: false`; Vite: `build.sourcemap: false`) so your original source is not downloadable.'],

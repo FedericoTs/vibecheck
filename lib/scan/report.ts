@@ -6,6 +6,7 @@ import type { FundamentalsResult } from './fundamentals';
 import type { LighthouseResult } from './lighthouse';
 import type { FirebaseScanResult } from './firebase';
 import type { RoutesScanResult } from './routes';
+import type { AiSurfaceResult } from './ai-surface';
 import { worstGrade } from './grade';
 
 export type CategoryGroup = 'security' | 'basics' | 'performance';
@@ -45,6 +46,7 @@ export interface ReportInputs {
   lighthouse?: LighthouseResult | null;
   firebase?: FirebaseScanResult | null;
   routes?: RoutesScanResult | null;
+  ai?: AiSurfaceResult | null;
 }
 
 const VERDICT: Record<Grade, string> = {
@@ -168,6 +170,22 @@ export function combineReport(inp: ReportInputs): Report {
     }
     categories.push({ key: 'secrets', group: 'security', label: 'Exposed secrets', grade: s.grade, summary: s.summary, checks });
   }
+  if (inp.ai) {
+    const a = inp.ai;
+    issueCount += a.exposed.length;
+    securityGrades.push(a.grade);
+    // Only surface what we learned something about; "absent" everywhere is noise.
+    const interesting = a.findings.filter((f) => f.verdict !== 'absent');
+    const checks: CheckItem[] = interesting.length
+      ? interesting.map((f) => ({
+          label: f.label,
+          pass: f.verdict !== 'exposed',
+          detail: f.verdict === 'inconclusive' ? `couldn't be determined — ${f.detail}` : f.detail,
+        }))
+      : [{ label: 'No exposed AI or MCP endpoints', pass: true, detail: `${a.findings.length} common AI endpoints checked` }];
+    categories.push({ key: 'ai', group: 'security', label: 'AI & MCP endpoints', grade: a.grade, summary: a.summary, checks });
+  }
+
   if (inp.routes) {
     const r = inp.routes;
     issueCount += r.exposed.length;
