@@ -29,6 +29,8 @@ const CATEGORY_FIX: Record<string, string> = {
     "Add this response header at the edge — in next.config.js headers(), a _headers file, or your host's header settings.",
   ai:
     'Put this endpoint behind authentication AND a per-user rate limit. An open AI endpoint lets strangers spend your model credits (or use your key as a free relay), and an MCP server that answers `tools/list` anonymously hands attackers your capability map. Require a session on the server, cap requests per user, and cap max_tokens per request.',
+  privacy:
+    'Do not load trackers or set analytics cookies until the visitor has actively opted in. Gate every analytics/marketing script behind a consent choice (default to OFF), or switch to cookieless analytics such as Plausible/Umami which need no banner at all.',
   fundamentals: 'Add the missing tag to the page <head>.',
   lighthouse:
     'Improve this Lighthouse category — the report at pagespeed.web.dev lists the specific opportunities for this page.',
@@ -36,6 +38,11 @@ const CATEGORY_FIX: Record<string, string> = {
 
 /** More specific guidance when the label tells us exactly what failed. */
 const LABEL_FIX: Array<[RegExp, string]> = [
+  [/tracking cookies before consent/i, 'Stop setting analytics cookies on first load. Load the analytics script only AFTER the visitor opts in, and default the choice to off. Cookieless analytics (Plausible, Umami, Fathom) avoid the problem entirely.'],
+  [/third-party trackers/i, 'Load these scripts only after an explicit opt-in — not on page load. Wrap them in your consent check, or replace them with cookieless analytics that need no consent.'],
+  [/consent banner/i, 'Add a consent mechanism that blocks non-essential scripts until the visitor chooses, with reject as easy as accept. A banner that only says "we use cookies" while already tracking does not do anything.'],
+  [/fonts self-hosted/i, 'Self-host your fonts instead of loading them from fonts.googleapis.com. Download the woff2 files into your project and serve them from your own domain (next/font does this automatically). This removes the transfer of visitor IPs to Google.'],
+  [/privacy policy/i, 'Add a privacy policy page and link it from the footer, stating what you collect, why, on what legal basis, who you share it with, and how to request deletion.'],
   [/mcp/i, 'Require authentication on your MCP server before it will answer `tools/list` or run a tool. An MCP endpoint that describes its tools to anonymous callers is handing an attacker a map of your internal capabilities — and many such servers can also execute code.'],
   [/chat endpoint|ai endpoint|completion endpoint|generation endpoint/i, 'Require a signed-in session on the server before calling the model, add a per-user rate limit, and cap max_tokens. As it stands anyone can run completions on your account — the bill is yours.'],
   [/storage bucket/i, 'Make the buckets private and add Storage policies so only the owning user can read their objects. Anonymous visitors should not be able to list buckets at all.'],

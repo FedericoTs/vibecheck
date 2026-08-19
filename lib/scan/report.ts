@@ -7,9 +7,10 @@ import type { LighthouseResult } from './lighthouse';
 import type { FirebaseScanResult } from './firebase';
 import type { RoutesScanResult } from './routes';
 import type { AiSurfaceResult } from './ai-surface';
+import type { PrivacyResult } from './privacy';
 import { worstGrade } from './grade';
 
-export type CategoryGroup = 'security' | 'basics' | 'performance';
+export type CategoryGroup = 'security' | 'privacy' | 'basics' | 'performance';
 
 /** One thing the tool checked, and whether it passed. Shown as a ✓/✗ line. */
 export interface CheckItem {
@@ -47,6 +48,7 @@ export interface ReportInputs {
   firebase?: FirebaseScanResult | null;
   routes?: RoutesScanResult | null;
   ai?: AiSurfaceResult | null;
+  privacy?: PrivacyResult | null;
 }
 
 const VERDICT: Record<Grade, string> = {
@@ -219,6 +221,14 @@ export function combineReport(inp: ReportInputs): Report {
   }
 
   // ── basics + performance (secondary — own grades, never drag security) ─
+  if (inp.privacy) {
+    const pr = inp.privacy;
+    // Own group, own grade: EU privacy is NOT a security finding, and must not
+    // drag the security headline (nor be dragged by it).
+    const checks: CheckItem[] = pr.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail }));
+    categories.push({ key: 'privacy', group: 'privacy', label: 'EU privacy (GDPR signals)', grade: pr.grade, summary: pr.summary, checks });
+  }
+
   if (inp.fundamentals) {
     const f = inp.fundamentals;
     const checks: CheckItem[] = f.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.pass ? undefined : 'missing from the page' }));

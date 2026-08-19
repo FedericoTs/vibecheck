@@ -10,6 +10,7 @@ import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
 import type { RoutesScanResult } from '@/lib/scan/routes';
 import type { AiSurfaceResult } from '@/lib/scan/ai-surface';
+import type { PrivacyResult } from '@/lib/scan/privacy';
 import type { SecretsScanResult } from '@/lib/scan/secrets';
 import type { FundamentalsResult } from '@/lib/scan/fundamentals';
 import type { LighthouseResult } from '@/lib/scan/lighthouse';
@@ -109,8 +110,9 @@ export default function Home() {
     const fundamentalsP = appUrl.trim() ? postScan<FundamentalsResult>('/api/scan/fundamentals') : Promise.resolve(null);
     const routesP = appUrl.trim() ? postScan<RoutesScanResult>('/api/scan/routes') : Promise.resolve(null);
     const aiP = appUrl.trim() ? postScan<AiSurfaceResult>('/api/scan/ai') : Promise.resolve(null);
+    const privacyP = appUrl.trim() ? postScan<PrivacyResult>('/api/scan/privacy') : Promise.resolve(null);
     try {
-      const [hdr, paths, secrets, fundamentals, routes, ai] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, routesP, aiP]);
+      const [hdr, paths, secrets, fundamentals, routes, ai, privacy] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, routesP, aiP, privacyP]);
       if (appUrl.trim() && !hdr && !paths && !secrets && !fundamentals) {
         setError('Could not reach that app URL — is it live and public?');
       }
@@ -133,7 +135,7 @@ export default function Home() {
       ]);
       if (secrets?.firebase) setAutoDetected(true);
 
-      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals };
+      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals, privacy };
       setInputs(base);
 
       // Lighthouse is slow (10-30s) — render the security card now, fill it in when
@@ -316,15 +318,28 @@ export default function Home() {
             </div>
           )}
 
+          {/* EU privacy — its own grade, deliberately not part of the security headline */}
+          {report.categories.some((c) => c.group === 'privacy') && (
+            <div className="mt-8">
+              <p className="kicker mb-3">
+                EU privacy <span className="text-faint">· what an EU visitor gets before clicking anything</span>
+              </p>
+              <CategoryList categories={report.categories.filter((c) => c.group === 'privacy')} />
+              <p className="mt-2 text-xs leading-relaxed text-faint">
+                These are observations, not legal advice — whether they matter depends on your users and your legal basis.
+              </p>
+            </div>
+          )}
+
           {/* fundamentals + performance — secondary, own grades */}
-          {(report.categories.some((c) => c.group !== 'security') || lhLoading) && (
+          {(report.categories.some((c) => c.group === 'basics' || c.group === 'performance') || lhLoading) && (
             <div className="mt-8">
               <p className="kicker mb-3">
                 Fundamentals &amp; performance <span className="text-faint">· separate from the security grade</span>
               </p>
               <div className="space-y-3">
-                {report.categories.some((c) => c.group !== 'security') && (
-                  <CategoryList categories={report.categories.filter((c) => c.group !== 'security')} />
+                {report.categories.some((c) => c.group === 'basics' || c.group === 'performance') && (
+                  <CategoryList categories={report.categories.filter((c) => c.group === 'basics' || c.group === 'performance')} />
                 )}
                 {lhLoading && (
                   <div className="flex items-center gap-2.5 border border-line bg-panel px-4 py-3">
