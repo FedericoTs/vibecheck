@@ -31,6 +31,19 @@ export interface EmailAuthResult {
   summary: string;
 }
 
+/**
+ * Hosting platforms whose subdomains the user does not control. Telling someone
+ * on myapp.vercel.app to "publish an SPF record" is advice they cannot act on —
+ * they own no DNS for that name — and a large share of AI-built apps live on
+ * exactly these hosts. The checks are reported as not-applicable instead.
+ */
+const PLATFORM_DOMAINS =
+  /\.(vercel\.app|netlify\.app|pages\.dev|github\.io|gitlab\.io|onrender\.com|fly\.dev|railway\.app|up\.railway\.app|herokuapp\.com|web\.app|firebaseapp\.com|supabase\.co|glitch\.me|replit\.app|repl\.co|surge\.sh|azurewebsites\.net|streamlit\.app|lovable\.app|bolt\.host)$/i;
+
+export function isPlatformSubdomain(host: string): boolean {
+  return PLATFORM_DOMAINS.test(host.trim().toLowerCase());
+}
+
 export interface DnsFacts {
   /** all TXT records at the domain apex, flattened. */
   txt: string[];
@@ -64,6 +77,27 @@ export function spfIsEnforcing(record: string | null): boolean {
 const PENALTY = { high: 30, medium: 15, low: 7 } as const;
 
 export function analyzeEmailAuth(facts: DnsFacts, host = ''): EmailAuthResult {
+  // Not the user's domain to configure -> report, don't fail.
+  if (isPlatformSubdomain(host)) {
+    const checks: EmailAuthCheck[] = [
+      {
+        key: 'platform-domain',
+        label: 'Email spoofing protection',
+        pass: true,
+        severity: 'low',
+        detail: `${host} is a hosting subdomain, so its DNS isn't yours to configure — this applies once you use a custom domain`,
+      },
+    ];
+    return {
+      host,
+      checks,
+      failed: [],
+      grade: 'A',
+      score: 100,
+      summary: "Not applicable on a hosting subdomain ✅",
+    };
+  }
+
   const spf = findSpf(facts.txt);
   const dmarc = findDmarc(facts.dmarcTxt);
   const policy = dmarcPolicy(dmarc);

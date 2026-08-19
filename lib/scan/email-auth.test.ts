@@ -64,3 +64,23 @@ describe('analyzeEmailAuth', () => {
     expect(r.summary).toMatch(/protected against email spoofing/);
   });
 });
+
+describe('platform subdomains', () => {
+  it('does not demand DNS records the user cannot publish', () => {
+    for (const h of ['myapp.vercel.app', 'thing.netlify.app', 'x.pages.dev', 'demo.lovable.app', 'p.supabase.co']) {
+      const r = analyzeEmailAuth(facts(), h);
+      expect(r.failed).toHaveLength(0);
+      expect(r.grade).toBe('A');
+      expect(r.checks[0].detail).toMatch(/isn't yours to configure/);
+    }
+  });
+
+  it('still checks a real custom domain', () => {
+    const r = analyzeEmailAuth(facts(), 'myapp.com');
+    expect(r.failed.length).toBeGreaterThan(0);
+  });
+
+  it('does not exempt a lookalike that merely contains a platform name', () => {
+    expect(analyzeEmailAuth(facts(), 'vercel.app.evil.com').failed.length).toBeGreaterThan(0);
+  });
+});
