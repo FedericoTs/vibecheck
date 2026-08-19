@@ -20,6 +20,23 @@ import type { LighthouseResult } from '@/lib/scan/lighthouse';
 
 const GITHUB_URL = 'https://github.com/FedericoTs/vibecheck';
 const X_URL = 'https://x.com/federico_sciuca';
+// Monitoring waitlist stays built but hidden until it is switched on.
+// Flip NEXT_PUBLIC_WAITLIST=on in Vercel (and set the Resend vars) to show it.
+const WAITLIST_ENABLED = process.env.NEXT_PUBLIC_WAITLIST === 'on';
+
+/** Shown live while scanning, ticked off as each check returns. */
+const SCAN_STEPS = [
+  'secrets',
+  'admin & debug routes',
+  'AI & MCP endpoints',
+  'exposed files',
+  'security headers',
+  'HTTPS & redirects',
+  'email spoofing',
+  'EU privacy',
+  'AI & search visibility',
+  'fundamentals',
+];
 
 function tone(grade: Grade | null): string {
   if (grade === 'A' || grade === 'B') return 'text-safe border-safe/40';
@@ -158,6 +175,7 @@ export default function Home() {
   const [notifyEmail, setNotifyEmail] = useState('');
   const [notifyState, setNotifyState] = useState<'idle' | 'sending' | 'done' | 'error'>('idle');
   const [notifyError, setNotifyError] = useState('');
+  const [done, setDone] = useState<string[]>([]);
   const report = useMemo(() => (inputs ? combineReport(inputs) : null), [inputs]);
 
   async function run(e: React.FormEvent) {
@@ -173,6 +191,7 @@ export default function Home() {
     setAutoDetected(false);
     setSkipped([]);
     setRateLimited(false);
+    setDone([]);
     // A check that could not RUN must never look like a check that PASSED, so
     // every failure is recorded and surfaced rather than silently dropped.
     const failed: string[] = [];
@@ -199,7 +218,8 @@ export default function Home() {
         .catch(() => {
           failed.push(label);
           return null;
-        });
+        })
+        .finally(() => setDone((d) => (d.includes(label) ? d : [...d, label])));
 
     const headersP = appUrl.trim() ? postScan<HeadersScanResult>('/api/scan/headers', 'security headers') : Promise.resolve(null);
     const pathsP = appUrl.trim() ? postScan<PathsScanResult>('/api/scan/paths', 'exposed files') : Promise.resolve(null);
@@ -331,6 +351,7 @@ export default function Home() {
     setLhLoading(false);
     setSkipped([]);
     setRateLimited(false);
+    setDone([]);
   }
 
   return (
@@ -414,14 +435,27 @@ export default function Home() {
           </form>
 
           {loading && (
-            <div className="mt-4 border border-line bg-panel px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-warn" />
-                <p className="font-mono text-xs text-muted">
-                  Running 10 checks — database, secrets, routes, AI endpoints, headers, privacy, DNS, TLS…
+            <div className="mt-4 border border-line bg-panel">
+              <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+                <div className="flex items-center gap-2.5">
+                  <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-warn" />
+                  <p className="font-mono text-xs uppercase tracking-wider text-ink">Scanning</p>
+                </div>
+                <p className="font-mono text-xs text-faint">
+                  {done.length}/{SCAN_STEPS.length}
                 </p>
               </div>
-              <p className="mt-1.5 pl-5 font-mono text-xs text-faint">usually 5–15 seconds</p>
+              <ul className="grid grid-cols-1 gap-x-4 px-4 py-3 sm:grid-cols-2">
+                {SCAN_STEPS.map((label) => {
+                  const isDone = done.includes(label);
+                  return (
+                    <li key={label} className="flex items-center gap-2 py-1 font-mono text-xs">
+                      <span className={isDone ? 'text-safe' : 'text-faint'}>{isDone ? '✓' : '·'}</span>
+                      <span className={isDone ? 'text-muted' : 'text-faint'}>{label}</span>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           )}
 
@@ -437,25 +471,42 @@ export default function Home() {
 
       {report && (
         <section>
-          {/* overall grade + how much was checked */}
-          <div className="flex items-stretch border border-line bg-panel">
-            <div className={`flex w-28 shrink-0 items-center justify-center border-r text-7xl font-semibold font-mono ${tone(report.overallGrade)}`}>
-              {report.overallGrade}
+          {/* the headline — this is the screenshot people share */}
+          <div className={`border bg-panel ${report.issueCount > 0 ? 'border-danger/40' : 'border-safe/40'}`}>
+            <div className="flex items-stretch">
+              <div
+                className={`flex w-24 shrink-0 items-center justify-center border-r font-mono text-6xl font-semibold sm:w-32 sm:text-7xl ${tone(
+                  report.overallGrade,
+                )}`}
+              >
+                {report.overallGrade}
+              </div>
+              <div className="flex min-w-0 flex-col justify-center px-5 py-5">
+                <p className="kicker mb-1.5 truncate">
+                  Security grade
+                  {appUrl.trim() ? (
+                    <span className="text-faint"> · {appUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '')}</span>
+                  ) : null}
+                </p>
+                <p className="font-display text-lg leading-snug text-ink sm:text-xl">{report.verdict}</p>
+              </div>
             </div>
-            <div className="flex min-w-0 flex-col justify-center p-5">
-              <p className="kicker mb-1 truncate">
-                Security grade
-                {appUrl.trim() ? (
-                  <span className="text-faint"> · {appUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '')}</span>
-                ) : null}
-              </p>
-              <p className="font-display text-lg leading-snug">{report.verdict}</p>
-              <p className="mt-2 font-mono text-xs text-muted">
-                <span className="text-safe">{report.passed}</span>/{report.total} checks passed
-                {report.issueCount > 0 && (
-                  <span className="text-danger"> · {report.issueCount} security issue{report.issueCount === 1 ? '' : 's'}</span>
-                )}
-              </p>
+            {/* one honest metric row, not a dashboard */}
+            <div className="flex divide-x divide-line border-t border-line">
+              <div className="flex-1 px-5 py-3">
+                <p className="font-mono text-lg font-semibold text-safe">{report.passed}</p>
+                <p className="kicker text-faint">passed</p>
+              </div>
+              <div className="flex-1 px-5 py-3">
+                <p className={`font-mono text-lg font-semibold ${report.issueCount > 0 ? 'text-danger' : 'text-muted'}`}>
+                  {report.issueCount}
+                </p>
+                <p className="kicker text-faint">to fix</p>
+              </div>
+              <div className="flex-1 px-5 py-3">
+                <p className="font-mono text-lg font-semibold text-muted">{report.total}</p>
+                <p className="kicker text-faint">checks run</p>
+              </div>
             </div>
           </div>
 
@@ -598,7 +649,7 @@ export default function Home() {
         </section>
       )}
 
-      {report && (
+      {report && WAITLIST_ENABLED && (
         <section className="mt-10 border border-line bg-panel p-5">
           {notifyState === 'done' ? (
             <p className="font-mono text-xs text-safe">
