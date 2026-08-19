@@ -96,10 +96,14 @@ export default function Home() {
       const base: ReportInputs = { supabase: sb, headers: hdr, paths, secrets, fundamentals };
       setInputs(base);
 
-      // Lighthouse is slow (10-30s) — render the security card now, fill it in when ready.
+      // Lighthouse is slow (10-30s) — render the security card now, fill it in when
+      // ready. GET so Vercel's edge caches each URL's result (protects the PSI quota).
       if (appUrl.trim()) {
         setLhLoading(true);
-        postScan<LighthouseResult>('/api/scan/lighthouse')
+        fetch(`/api/scan/lighthouse?url=${encodeURIComponent(appUrl)}`)
+          .then((r) => r.json())
+          .then((j) => (j?.error ? null : (j as LighthouseResult)))
+          .catch(() => null)
           .then((lh) => {
             if (lh) setInputs((prev) => ({ ...(prev ?? base), lighthouse: lh }));
           })
