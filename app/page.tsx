@@ -22,25 +22,27 @@ function tone(grade: Grade | null): string {
 
 function CategoryList({ categories }: { categories: ReportCategory[] }) {
   return (
-    <div className="border border-line bg-panel divide-y divide-line">
-      {categories.map((c, i) => (
-        <div key={c.key} className="p-5">
-          <div className="flex items-center justify-between">
-            <p className="kicker">
-              {String(i + 1).padStart(2, '0')} — {c.label}
-            </p>
+    <div className="space-y-3">
+      {categories.map((c) => (
+        <div key={c.key} className="border border-line bg-panel">
+          <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+            <p className="font-mono text-xs font-medium uppercase tracking-wider text-ink">{c.label}</p>
             <span className={`border px-2 py-0.5 font-mono text-xs ${tone(c.grade)}`}>{c.grade ?? '—'}</span>
           </div>
-          <p className="mt-2 text-sm text-muted">{c.summary}</p>
-          {c.findings.length > 0 && (
-            <ul className="mt-3 space-y-1.5 border-l border-danger/40 pl-3">
-              {c.findings.map((f, j) => (
-                <li key={j} className="font-mono text-xs text-ink/90">
-                  <span className="text-danger">✗ </span>
-                  {f}
+          {c.checks.length > 0 ? (
+            <ul className="divide-y divide-line-soft">
+              {c.checks.map((ck, i) => (
+                <li key={i} className="flex items-start gap-2.5 px-4 py-2.5">
+                  <span className={`mt-px font-mono text-sm ${ck.pass ? 'text-safe' : 'text-danger'}`}>{ck.pass ? '✓' : '✗'}</span>
+                  <div className="min-w-0 flex-1">
+                    <span className={`text-sm ${ck.pass ? 'text-muted' : 'text-ink'}`}>{ck.label}</span>
+                    {ck.detail && <span className="mt-0.5 block break-words font-mono text-xs text-faint">{ck.detail}</span>}
+                  </div>
                 </li>
               ))}
             </ul>
+          ) : (
+            <p className="px-4 py-3 text-sm text-muted">{c.summary}</p>
           )}
         </div>
       ))}
@@ -216,20 +218,19 @@ export default function Home() {
 
       {report && (
         <section>
-          {/* overall grade */}
+          {/* overall grade + how much was checked */}
           <div className="flex items-stretch border border-line bg-panel">
-            <div
-              className={`flex w-28 shrink-0 items-center justify-center border-r text-7xl font-semibold font-mono ${tone(
-                report.overallGrade,
-              )}`}
-            >
+            <div className={`flex w-28 shrink-0 items-center justify-center border-r text-7xl font-semibold font-mono ${tone(report.overallGrade)}`}>
               {report.overallGrade}
             </div>
             <div className="flex flex-col justify-center p-5">
-              <p className="kicker mb-1">Overall</p>
+              <p className="kicker mb-1">Security grade</p>
               <p className="font-display text-lg leading-snug">{report.verdict}</p>
-              <p className="mt-1 font-mono text-xs text-muted">
-                {report.issueCount === 0 ? 'no issues found' : `${report.issueCount} issue${report.issueCount === 1 ? '' : 's'} found`}
+              <p className="mt-2 font-mono text-xs text-muted">
+                <span className="text-safe">{report.passed}</span>/{report.total} checks passed
+                {report.issueCount > 0 && (
+                  <span className="text-danger"> · {report.issueCount} security issue{report.issueCount === 1 ? '' : 's'}</span>
+                )}
               </p>
             </div>
           </div>
@@ -241,8 +242,8 @@ export default function Home() {
 
           {error && <p className="mt-4 font-mono text-xs text-warn">{error}</p>}
 
-          {/* tenant-guard funnel — only when there's an actual database exposure (its remit) */}
-          {report.categories.some((c) => c.key === 'supabase' && c.findings.length > 0) && (
+          {/* tenant-guard funnel — only when there's an actual database exposure */}
+          {report.categories.some((c) => c.key === 'supabase' && c.checks.some((k) => !k.pass)) && (
             <div className="mt-4 border border-line bg-panel p-5">
               <p className="kicker mb-2">Stop it shipping again</p>
               <p className="text-sm text-muted">
@@ -254,38 +255,53 @@ export default function Home() {
             </div>
           )}
 
-          {/* fundamentals + performance — secondary, own grades, not part of the security headline */}
+          {/* fundamentals + performance — secondary, own grades */}
           {(report.categories.some((c) => c.group !== 'security') || lhLoading) && (
             <div className="mt-8">
               <p className="kicker mb-3">
                 Fundamentals &amp; performance <span className="text-faint">· separate from the security grade</span>
               </p>
-              {report.categories.some((c) => c.group !== 'security') && (
-                <CategoryList categories={report.categories.filter((c) => c.group !== 'security')} />
-              )}
-              {lhLoading && (
-                <p className="mt-3 border border-line bg-panel p-4 font-mono text-xs text-muted">
-                  Running Lighthouse…{' '}
-                  <span className="text-faint">performance · SEO · accessibility (10–30s)</span>
-                </p>
-              )}
+              <div className="space-y-3">
+                {report.categories.some((c) => c.group !== 'security') && (
+                  <CategoryList categories={report.categories.filter((c) => c.group !== 'security')} />
+                )}
+                {lhLoading && (
+                  <div className="flex items-center gap-2.5 border border-line bg-panel px-4 py-3">
+                    <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-warn" />
+                    <p className="font-mono text-xs text-muted">
+                      Running Lighthouse — performance, SEO, accessibility{' '}
+                      <span className="text-faint">(can take 10–30s)</span>
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
-          {/* actions — offers, never walls */}
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <button onClick={reset} className="border border-line px-4 py-2 font-mono text-xs text-ink hover:border-ink transition-colors">
-              ↺ scan another
+          {/* actions — the share loop + a clear follow CTA */}
+          <div className="mt-8 space-y-3">
+            <button
+              onClick={share}
+              className="w-full border border-ink bg-ink px-5 py-3 font-mono text-xs font-medium uppercase tracking-wider text-canvas transition hover:bg-transparent hover:text-ink"
+            >
+              {copied ? '✓ link copied — paste it anywhere' : 'share your result →'}
             </button>
-            <button onClick={share} className="border border-line px-4 py-2 font-mono text-xs text-ink hover:border-ink transition-colors">
-              {copied ? '✓ copied' : 'share result'}
-            </button>
-            <a href={GITHUB_URL} className="border border-line px-4 py-2 font-mono text-xs text-ink hover:border-ink transition-colors">
-              ★ star on GitHub
+            <a
+              href={X_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="flex w-full items-center justify-center gap-2 border border-ink/50 bg-ink/5 px-5 py-3 font-mono text-xs text-ink transition hover:bg-ink/10"
+            >
+              <span className="text-sm font-semibold">𝕏</span> Follow @federico_sciuca — I built this, shipping more
             </a>
-            <a href={X_URL} className="border border-line px-4 py-2 font-mono text-xs text-ink hover:border-ink transition-colors">
-              follow on X — if this helped
-            </a>
+            <div className="flex flex-wrap gap-3 pt-1">
+              <button onClick={reset} className="border border-line px-4 py-2 font-mono text-xs text-muted transition-colors hover:border-ink hover:text-ink">
+                ↺ scan another
+              </button>
+              <a href={GITHUB_URL} className="border border-line px-4 py-2 font-mono text-xs text-muted transition-colors hover:border-ink hover:text-ink">
+                ★ star on GitHub
+              </a>
+            </div>
           </div>
         </section>
       )}
