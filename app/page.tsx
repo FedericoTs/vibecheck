@@ -76,6 +76,8 @@ export default function Home() {
   const [fixCopied, setFixCopied] = useState(false);
   const [badgeCopied, setBadgeCopied] = useState(false);
   const [autoDetected, setAutoDetected] = useState(false);
+  const [skipped, setSkipped] = useState<string[]>([]);
+  const [rateLimited, setRateLimited] = useState(false);
   const report = useMemo(() => (inputs ? combineReport(inputs) : null), [inputs]);
 
   async function run(e: React.FormEvent) {
@@ -89,18 +91,38 @@ export default function Home() {
     setInputs(null);
     setLhLoading(false);
     setAutoDetected(false);
-    const postScan = <T,>(endpoint: string): Promise<T | null> =>
+    setSkipped([]);
+    setRateLimited(false);
+    // A check that could not RUN must never look like a check that PASSED, so
+    // every failure is recorded and surfaced rather than silently dropped.
+    const failed: string[] = [];
+    let limited = false;
+    const postScan = <T,>(endpoint: string, label: string): Promise<T | null> =>
       fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ url: appUrl }),
       })
-        .then((r) => r.json())
-        .then((j) => (j?.error ? null : (j as T)))
-        .catch(() => null);
+        .then(async (r) => {
+          if (r.status === 429) {
+            limited = true;
+            failed.push(label);
+            return null;
+          }
+          const j = await r.json().catch(() => null);
+          if (!j || j.error) {
+            failed.push(label);
+            return null;
+          }
+          return j as T;
+        })
+        .catch(() => {
+          failed.push(label);
+          return null;
+        });
 
-    const headersP = appUrl.trim() ? postScan<HeadersScanResult>('/api/scan/headers') : Promise.resolve(null);
-    const pathsP = appUrl.trim() ? postScan<PathsScanResult>('/api/scan/paths') : Promise.resolve(null);
+    const headersP = appUrl.trim() ? postScan<HeadersScanResult>('/api/scan/headers', 'security headers') : Promise.resolve(null);
+    const pathsP = appUrl.trim() ? postScan<PathsScanResult>('/api/scan/paths', 'exposed files') : Promise.resolve(null);
     const secretsP = appUrl.trim()
       ? postScan<
           SecretsScanResult & {
@@ -108,18 +130,26 @@ export default function Home() {
             firebase?: FirebaseConfig | null;
             firebaseCollections?: string[];
           }
-        >('/api/scan/secrets')
+        >('/api/scan/secrets', 'secrets')
       : Promise.resolve(null);
-    const fundamentalsP = appUrl.trim() ? postScan<FundamentalsResult>('/api/scan/fundamentals') : Promise.resolve(null);
-    const routesP = appUrl.trim() ? postScan<RoutesScanResult>('/api/scan/routes') : Promise.resolve(null);
-    const aiP = appUrl.trim() ? postScan<AiSurfaceResult>('/api/scan/ai') : Promise.resolve(null);
-    const privacyP = appUrl.trim() ? postScan<PrivacyResult>('/api/scan/privacy') : Promise.resolve(null);
-    const emailP = appUrl.trim() ? postScan<EmailAuthResult>('/api/scan/email') : Promise.resolve(null);
-    const transportP = appUrl.trim() ? postScan<TransportResult>('/api/scan/transport') : Promise.resolve(null);
+    const fundamentalsP = appUrl.trim() ? postScan<FundamentalsResult>('/api/scan/fundamentals', 'fundamentals') : Promise.resolve(null);
+    const routesP = appUrl.trim() ? postScan<RoutesScanResult>('/api/scan/routes', 'admin & debug routes') : Promise.resolve(null);
+    const aiP = appUrl.trim() ? postScan<AiSurfaceResult>('/api/scan/ai', 'AI & MCP endpoints') : Promise.resolve(null);
+    const privacyP = appUrl.trim() ? postScan<PrivacyResult>('/api/scan/privacy', 'EU privacy') : Promise.resolve(null);
+    const emailP = appUrl.trim() ? postScan<EmailAuthResult>('/api/scan/email', 'email spoofing') : Promise.resolve(null);
+    const transportP = appUrl.trim() ? postScan<TransportResult>('/api/scan/transport', 'HTTPS & redirects') : Promise.resolve(null);
     try {
       const [hdr, paths, secrets, fundamentals, routes, ai, privacy, email, transport] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, routesP, aiP, privacyP, emailP, transportP]);
-      if (appUrl.trim() && !hdr && !paths && !secrets && !fundamentals) {
-        setError('Could not reach that app URL — is it live and public?');
+      if (appUrl.trim()) {
+        if (limited) {
+          // The app is fine — we are. Saying "could not reach your app" here
+          // sends people debugging a problem that does not exist.
+          setError('Too many scans from your network in the last minute. Wait a moment and run it again — nothing is wrong with your app.');
+        } else if (!hdr && !paths && !secrets && !fundamentals) {
+          setError('Could not reach that app URL — is it live and public?');
+        }
+        setSkipped(failed);
+        setRateLimited(limited);
       }
 
       // Database check: use whatever the user typed, else the Supabase project the
@@ -195,6 +225,8 @@ export default function Home() {
     setInputs(null);
     setError('');
     setLhLoading(false);
+    setSkipped([]);
+    setRateLimited(false);
   }
 
   return (
@@ -277,6 +309,18 @@ export default function Home() {
             </div>
           </form>
 
+          {loading && (
+            <div className="mt-4 border border-line bg-panel px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-warn" />
+                <p className="font-mono text-xs text-muted">
+                  Running 9 checks — database, secrets, routes, AI endpoints, headers, privacy, DNS, TLS…
+                </p>
+              </div>
+              <p className="mt-1.5 pl-5 font-mono text-xs text-faint">usually 5–15 seconds</p>
+            </div>
+          )}
+
           {error && <p className="mt-4 font-mono text-xs text-danger">{error}</p>}
 
           <p className="mt-6 text-xs leading-relaxed text-faint">
@@ -319,6 +363,19 @@ export default function Home() {
           </div>
 
           {error && <p className="mt-4 font-mono text-xs text-warn">{error}</p>}
+
+          {skipped.length > 0 && (
+            <div className="mt-4 border border-warn/40 bg-panel px-4 py-3">
+              <p className="font-mono text-xs text-warn">
+                {skipped.length} check{skipped.length === 1 ? '' : 's'} could not run
+                {rateLimited ? ' (rate limited)' : ''}: <span className="text-muted">{skipped.join(', ')}</span>
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-faint">
+                This report is incomplete — those areas were not checked, which is not the same as them
+                being clean. Run the scan again in a minute for the full picture.
+              </p>
+            </div>
+          )}
 
           {/* tenant-guard funnel — only when there's an actual database exposure */}
           {report.categories.some((c) => c.key === 'supabase' && c.checks.some((k) => !k.pass)) && (
