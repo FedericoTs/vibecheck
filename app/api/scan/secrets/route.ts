@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { safeFetch, UA } from '@/lib/scan/fetch';
-import { findSecrets, gradeSecrets, type SecretFinding } from '@/lib/scan/secrets';
+import { findSecrets, gradeSecrets, isSourceMap, type SecretFinding } from '@/lib/scan/secrets';
 import { discoverSupabase } from '@/lib/scan/discover';
 
 export const runtime = 'nodejs';
@@ -83,6 +83,17 @@ export async function POST(request: Request): Promise<Response> {
   // it here — the table probes still run client-side.
   const discovered = discoverSupabase([html, ...bundles].join('\n'));
 
+  // Are the source maps published? A .js.map republishes the original source —
+  // comments, unminified logic, sometimes keys that minification hid.
+  const mapTargets = scripts.slice(0, 4).map((s) => `${s}.map`);
+  const maps = await Promise.all(
+    mapTargets.map(async (m) => {
+      const body = await fetchText(m);
+      return isSourceMap(body ? 200 : 0, body) ? m.split('/').pop() ?? m : null;
+    }),
+  );
+  const exposedMaps = maps.filter((m): m is string => !!m);
+
   // Dedupe across HTML + every bundle.
   const seen = new Set<string>();
   const findings = all.filter((f) => {
@@ -92,5 +103,9 @@ export async function POST(request: Request): Promise<Response> {
     return true;
   });
 
-  return NextResponse.json({ ...gradeSecrets(findings, finalUrl.host), discovered });
+  return NextResponse.json({
+    ...gradeSecrets(findings, finalUrl.host),
+    sourceMaps: { exposed: exposedMaps, checked: mapTargets.length > 0 },
+    discovered,
+  });
 }

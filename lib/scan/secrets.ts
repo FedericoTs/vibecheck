@@ -24,9 +24,19 @@ export interface SecretFinding {
 export interface SecretsScanResult {
   host: string;
   findings: SecretFinding[];
+  /** publicly served .js.map files — these republish your original source code. */
+  sourceMaps?: { exposed: string[]; checked: boolean };
   grade: Grade;
   score: number;
   summary: string;
+}
+
+/** Is this response body an actual source map (not an SPA HTML fallback)? */
+export function isSourceMap(status: number, body: string): boolean {
+  if (status !== 200) return false;
+  const head = body.slice(0, 400);
+  if (/^\s*<(!doctype|html)/i.test(head)) return false;
+  return /"version"\s*:\s*3/.test(head) && /"sources"\s*:\s*\[/.test(head.length < 400 ? body.slice(0, 4000) : body.slice(0, 4000));
 }
 
 interface SecretRule {
@@ -45,6 +55,17 @@ const RULES: SecretRule[] = [
   { id: 'openai', label: 'OpenAI API key', severity: 'high', regex: /\bsk-(?:proj-)?[A-Za-z0-9]{40,}\b/g },
   { id: 'private-key', label: 'Private key', severity: 'high', regex: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g },
   { id: 'google-api', label: 'Google API key (verify it is restricted)', severity: 'medium', regex: /\bAIza[0-9A-Za-z_-]{35}\b/g },
+  { id: 'slack-token', label: 'Slack token', severity: 'high', regex: /\bxox[baprs]-[A-Za-z0-9-]{10,}/g },
+  { id: 'slack-webhook', label: 'Slack webhook URL', severity: 'high', regex: /https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]{20,}/g },
+  { id: 'sendgrid', label: 'SendGrid API key', severity: 'high', regex: /\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/g },
+  { id: 'twilio', label: 'Twilio account SID', severity: 'high', regex: /\bAC[0-9a-f]{32}\b/g },
+  { id: 'mailgun', label: 'Mailgun API key', severity: 'high', regex: /\bkey-[0-9a-f]{32}\b/g },
+  { id: 'npm-token', label: 'npm access token', severity: 'high', regex: /\bnpm_[A-Za-z0-9]{36}\b/g },
+  { id: 'openai-legacy', label: 'OpenAI project key', severity: 'high', regex: /\bsk-svcacct-[A-Za-z0-9_-]{20,}/g },
+  { id: 'jwt-secret', label: 'Hard-coded JWT/session secret', severity: 'high', regex: /(?:jwt|session|cookie)[_-]?secret["'`\s:=]{1,6}["'`][A-Za-z0-9+/_-]{16,}["'`]/gi },
+  // user:password@host — the @ with credentials is what makes it a real leak
+  // (a bare postgres://localhost:5432/dev has no credentials and must not match).
+  { id: 'db-url', label: 'Database connection string', severity: 'high', regex: /\b(?:postgres|postgresql|mysql|mongodb(?:\+srv)?):\/\/[^\s"'`<>:@/]+:[^\s"'`<>@/]+@[^\s"'`<>/]+/g },
 ];
 
 // A JWT (Supabase keys are JWTs). We decode the payload to read the role claim.

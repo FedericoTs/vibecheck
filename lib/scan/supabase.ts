@@ -1,4 +1,4 @@
-import type { Fetchy, SupabaseScanResult, TableFinding } from './types';
+import type { Fetchy, SupabaseScanResult, TableFinding, BucketFinding, RpcFinding } from './types';
 import { gradeExposure } from './grade';
 
 /**
@@ -53,6 +53,32 @@ export function parseCountHeader(contentRange: string | null): number | null {
 /** Exposure verdict: the anon role actually returned at least one row. */
 export function isExposed(status: number, body: unknown): boolean {
   return status === 200 && Array.isArray(body) && body.length >= 1;
+}
+
+/**
+ * RPC endpoints PostgREST publishes, from the same OpenAPI doc used for tables.
+ * We only LIST them — vibecheck never calls an unknown database function, since
+ * executing one could mutate or delete data.
+ */
+export function parseRpcFromOpenApi(doc: unknown): string[] {
+  const paths = (doc as { paths?: Record<string, unknown> })?.paths;
+  if (!paths || typeof paths !== 'object') return [];
+  const out: string[] = [];
+  for (const key of Object.keys(paths)) {
+    const m = key.match(/^\/rpc\/([A-Za-z_][A-Za-z0-9_]*)$/);
+    if (m) out.push(m[1]);
+  }
+  return [...new Set(out)].sort();
+}
+
+/** Interpret a storage bucket-list response. Anon should NOT be able to enumerate buckets. */
+export function classifyBuckets(status: number, body: unknown): BucketFinding {
+  if (status !== 200 || !Array.isArray(body)) return { enumerable: false, publicBuckets: [], checked: true };
+  const publicBuckets = body
+    .filter((b): b is { name?: string; public?: boolean } => !!b && typeof b === 'object')
+    .filter((b) => b.public === true)
+    .map((b) => String(b.name ?? 'unnamed'));
+  return { enumerable: true, publicBuckets, checked: true };
 }
 
 // ── network helpers ──────────────────────────────────────────────────
@@ -126,6 +152,7 @@ export async function scanSupabase(opts: ScanOpts): Promise<SupabaseScanResult> 
 
   // 1) discover tables via the PostgREST OpenAPI root
   let tables: string[] = [];
+  let rpc: RpcFinding = { exposed: [], checked: false };
   try {
     const res = await fetchy(`${base}/rest/v1/`, {
       headers: { ...anonHeaders(anonKey), Accept: 'application/openapi+json' },
@@ -138,7 +165,9 @@ export async function scanSupabase(opts: ScanOpts): Promise<SupabaseScanResult> 
           : `Could not reach the project (HTTP ${res.status})`,
       );
     }
-    tables = parseTablesFromOpenApi(await res.json());
+    const doc = await res.json();
+    tables = parseTablesFromOpenApi(doc);
+    rpc = { exposed: parseRpcFromOpenApi(doc), checked: true };
   } catch {
     return blank(
       host,
@@ -151,7 +180,25 @@ export async function scanSupabase(opts: ScanOpts): Promise<SupabaseScanResult> 
     probeTable(fetchy, base, anonKey, t),
   );
   const exposed = findings.filter((f) => f.exposed);
-  const grade = gradeExposure(exposed.length, tables.length);
+
+  // 3) can anonymous visitors enumerate the storage buckets? (read-only)
+  let buckets: BucketFinding = { enumerable: false, publicBuckets: [], checked: false };
+  try {
+    const res = await fetchy(`${base}/storage/v1/bucket`, { headers: anonHeaders(anonKey) });
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* non-JSON */
+    }
+    buckets = classifyBuckets(res.status, body);
+  } catch {
+    /* storage unreachable — leave unchecked */
+  }
+
+  // Bucket enumeration is a real exposure; fold it into the grade.
+  const extra = (buckets.enumerable ? 1 : 0) + buckets.publicBuckets.length;
+  const grade = gradeExposure(exposed.length + extra, tables.length + (buckets.checked ? 1 : 0));
 
   return {
     ok: true,
@@ -159,11 +206,15 @@ export async function scanSupabase(opts: ScanOpts): Promise<SupabaseScanResult> 
     tablesFound: tables.length,
     findings,
     exposedCount: exposed.length,
+    buckets,
+    rpc,
     grade: grade.grade,
     summary:
-      exposed.length === 0
+      exposed.length === 0 && extra === 0
         ? `${tables.length} table(s) checked — none readable by anonymous visitors ✅`
-        : `${exposed.length} of ${tables.length} table(s) are readable by anyone with your public key ⚠️`,
+        : exposed.length > 0
+          ? `${exposed.length} of ${tables.length} table(s) are readable by anyone with your public key ⚠️`
+          : 'Your storage buckets are exposed to anonymous visitors ⚠️',
   };
 }
 

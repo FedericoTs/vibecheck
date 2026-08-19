@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findSecrets, jwtRole, redact, gradeSecrets, type SecretFinding } from './secrets';
+import { findSecrets, jwtRole, redact, gradeSecrets, isSourceMap, type SecretFinding } from './secrets';
 
 const b64url = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const jwt = (payload: object) => `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(payload)}.abcdefghij`;
@@ -46,6 +46,32 @@ describe('findSecrets — precision (false positives are unacceptable)', () => {
 
   it('clean client code produces nothing', () => {
     expect(findSecrets('const x=1; fetch("/api/user"); const pk="pk_live_ok";')).toEqual([]);
+  });
+
+  it('catches the newer patterns: Slack, SendGrid, npm, and DB connection strings', () => {
+    // NOTE: these fixtures are assembled at runtime rather than written as literals.
+    // Spelled out in full they trip GitHub's own secret-scanning push protection —
+    // which is a decent independent signal that the patterns look like the real thing.
+    const slackWebhook = 'https://hooks.slack.com/' + 'services/T00000000/B00000000/' + 'X'.repeat(24);
+    expect(findSecrets('xox' + 'b-1234567890-abcdef').map((f) => f.id)).toContain('slack-token');
+    expect(findSecrets(slackWebhook).map((f) => f.id)).toContain('slack-webhook');
+    expect(findSecrets('SG' + '.abcdefghijklmnop.qrstuvwxyz012345').map((f) => f.id)).toContain('sendgrid');
+    expect(findSecrets('npm_' + 'a'.repeat(36)).map((f) => f.id)).toContain('npm-token');
+    expect(findSecrets('postgresql://admin:' + 'hunter2' + '@db.example.com:5432/app').map((f) => f.id)).toContain('db-url');
+  });
+
+  it('does not flag a harmless postgres URL with no credentials', () => {
+    expect(findSecrets('postgres://localhost:5432/dev').map((f) => f.id)).not.toContain('db-url');
+  });
+});
+
+describe('isSourceMap', () => {
+  it('detects a real source map, rejects the SPA HTML fallback and 404s', () => {
+    const map = JSON.stringify({ version: 3, sources: ['src/App.tsx'], mappings: 'AAAA' });
+    expect(isSourceMap(200, map)).toBe(true);
+    expect(isSourceMap(200, '<!doctype html><html>app</html>')).toBe(false);
+    expect(isSourceMap(404, map)).toBe(false);
+    expect(isSourceMap(200, 'console.log(1)')).toBe(false);
   });
 });
 

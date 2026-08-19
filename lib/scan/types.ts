@@ -11,6 +11,20 @@ export interface TableFinding {
   error?: string;
 }
 
+export interface BucketFinding {
+  /** anon could enumerate the project's storage buckets at all. */
+  enumerable: boolean;
+  /** names of buckets marked public (readable by anyone). */
+  publicBuckets: string[];
+  checked: boolean;
+}
+
+export interface RpcFinding {
+  /** database functions PostgREST exposes to the public API surface. */
+  exposed: string[];
+  checked: boolean;
+}
+
 export interface SupabaseScanResult {
   ok: boolean;
   /** hostname of the Supabase project (never the key). */
@@ -18,6 +32,8 @@ export interface SupabaseScanResult {
   tablesFound: number;
   findings: TableFinding[];
   exposedCount: number;
+  buckets?: BucketFinding;
+  rpc?: RpcFinding;
   grade: Grade;
   /** a human summary line, safe to show and share. */
   summary: string;

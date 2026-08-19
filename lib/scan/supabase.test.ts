@@ -4,6 +4,8 @@ import {
   parseTablesFromOpenApi,
   parseCountHeader,
   isExposed,
+  parseRpcFromOpenApi,
+  classifyBuckets,
   scanSupabase,
 } from './supabase';
 import type { Fetchy } from './types';
@@ -34,6 +36,22 @@ describe('pure helpers', () => {
     expect(isExposed(200, [{ id: 1 }])).toBe(true);
     expect(isExposed(200, [])).toBe(false); // empty or RLS-filtered
     expect(isExposed(401, [{ id: 1 }])).toBe(false); // blocked
+  });
+
+  it('parseRpcFromOpenApi lists public database functions (never calls them)', () => {
+    const doc = { paths: { '/': {}, '/users': {}, '/rpc/wipe_org': {}, '/rpc/get_stats': {} } };
+    expect(parseRpcFromOpenApi(doc)).toEqual(['get_stats', 'wipe_org']);
+    expect(parseRpcFromOpenApi({})).toEqual([]);
+  });
+
+  it('classifyBuckets flags enumeration + public buckets, tolerates a blocked response', () => {
+    const open = classifyBuckets(200, [{ name: 'avatars', public: true }, { name: 'private', public: false }]);
+    expect(open.enumerable).toBe(true);
+    expect(open.publicBuckets).toEqual(['avatars']);
+
+    const blocked = classifyBuckets(401, { message: 'denied' });
+    expect(blocked.enumerable).toBe(false);
+    expect(blocked.publicBuckets).toEqual([]);
   });
 });
 

@@ -72,7 +72,35 @@ export function combineReport(inp: ReportInputs): Report {
               ? `${f.rowsVisible != null ? `${f.rowsVisible.toLocaleString()} rows` : 'rows'} readable by anyone`
               : 'not readable by the anon key',
           }))
-        : [{ label: 'No tenant tables reachable to test', pass: true }];
+        : [{ label: 'No tables reachable to test', pass: true }];
+
+      // Storage buckets
+      if (sb.buckets?.checked) {
+        const b = sb.buckets;
+        if (b.enumerable) issueCount += 1 + b.publicBuckets.length;
+        checks.push({
+          label: 'Storage buckets',
+          pass: !b.enumerable,
+          detail: b.enumerable
+            ? b.publicBuckets.length
+              ? `anyone can list your buckets — ${b.publicBuckets.length} public: ${b.publicBuckets.slice(0, 3).join(', ')}`
+              : 'anyone can enumerate your storage buckets'
+            : 'not enumerable by anonymous visitors',
+        });
+      }
+
+      // Public database functions (listed, never called)
+      if (sb.rpc?.checked) {
+        const n = sb.rpc.exposed.length;
+        checks.push({
+          label: 'Public database functions',
+          pass: n === 0,
+          detail:
+            n === 0
+              ? 'none exposed on the public API'
+              : `${n} callable by anyone: ${sb.rpc.exposed.slice(0, 4).join(', ')}${n > 4 ? '…' : ''}`,
+        });
+      }
       categories.push({ key: 'supabase', group: 'security', label: 'Database exposure', grade: sb.grade, summary: sb.summary, checks });
     } else {
       categories.push({ key: 'supabase', group: 'security', label: 'Database exposure', grade: null, summary: sb.error ?? 'Could not scan', checks: [] });
@@ -91,6 +119,18 @@ export function combineReport(inp: ReportInputs): Report {
             detail: 'checked the HTML + JS for service_role, Stripe, AWS, OpenAI, Anthropic, GitHub & private keys',
           },
         ];
+    if (s.sourceMaps?.checked) {
+      const n = s.sourceMaps.exposed.length;
+      if (n > 0) issueCount += n;
+      checks.push({
+        label: 'Source maps not published',
+        pass: n === 0,
+        detail:
+          n === 0
+            ? 'your original source is not downloadable'
+            : `${n} .map file(s) served — anyone can read your original source: ${s.sourceMaps.exposed.slice(0, 2).join(', ')}`,
+      });
+    }
     categories.push({ key: 'secrets', group: 'security', label: 'Exposed secrets', grade: s.grade, summary: s.summary, checks });
   }
   if (inp.paths) {

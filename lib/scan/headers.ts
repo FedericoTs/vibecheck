@@ -36,6 +36,16 @@ export function lowerHeaders(h: Record<string, string>): Record<string, string> 
   return out;
 }
 
+/**
+ * Do the cookies set on this response carry Secure + HttpOnly? Vacuously true
+ * when the response sets no cookies at all — there is nothing to protect.
+ */
+export function cookiesLookSafe(setCookie: string | undefined): boolean {
+  const raw = (setCookie ?? '').trim();
+  if (!raw) return true;
+  return /httponly/i.test(raw) && /secure/i.test(raw);
+}
+
 export function gradeHeaders(rawHeaders: Record<string, string>, host = ''): HeadersScanResult {
   const h = lowerHeaders(rawHeaders);
   const csp = h['content-security-policy'] ?? '';
@@ -91,6 +101,25 @@ export function gradeHeaders(rawHeaders: Record<string, string>, host = ''): Hea
         ? `Reveals your stack (${h['x-powered-by']}) to attackers.`
         : 'Does not advertise the server stack.',
       fix: 'Remove the X-Powered-By header.',
+    },
+    {
+      key: 'cors',
+      label: 'CORS not wide open with credentials',
+      present: !(
+        (h['access-control-allow-origin'] ?? '').trim() === '*' &&
+        (h['access-control-allow-credentials'] ?? '').toLowerCase() === 'true'
+      ),
+      severity: 'high',
+      note: 'Allow-Origin:* together with Allow-Credentials lets any site read authenticated responses.',
+      fix: 'Echo a specific allowed origin instead of *, or drop Allow-Credentials.',
+    },
+    {
+      key: 'cookie-flags',
+      label: 'Cookies marked Secure + HttpOnly',
+      present: cookiesLookSafe(h['set-cookie']),
+      severity: 'medium',
+      note: 'Session cookies without HttpOnly can be stolen by any XSS; without Secure they can leak over http.',
+      fix: 'Set your session cookies with Secure; HttpOnly; SameSite=Lax.',
     },
   ];
 
