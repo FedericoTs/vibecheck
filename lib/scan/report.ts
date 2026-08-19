@@ -9,6 +9,7 @@ import type { RoutesScanResult } from './routes';
 import type { AiSurfaceResult } from './ai-surface';
 import type { PrivacyResult } from './privacy';
 import type { EmailAuthResult } from './email-auth';
+import type { TransportResult } from './transport';
 import { worstGrade } from './grade';
 
 export type CategoryGroup = 'security' | 'privacy' | 'basics' | 'performance';
@@ -51,6 +52,7 @@ export interface ReportInputs {
   ai?: AiSurfaceResult | null;
   privacy?: PrivacyResult | null;
   email?: EmailAuthResult | null;
+  transport?: TransportResult | null;
 }
 
 const VERDICT: Record<Grade, string> = {
@@ -238,6 +240,14 @@ export function combineReport(inp: ReportInputs): Report {
   }
 
   // ── basics + performance (secondary — own grades, never drag security) ─
+  if (inp.transport && inp.transport.checks.length > 0) {
+    const t = inp.transport;
+    issueCount += t.failed.length;
+    securityGrades.push(t.grade);
+    const checks: CheckItem[] = t.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail }));
+    categories.push({ key: 'transport', group: 'security', label: 'HTTPS & redirects', grade: t.grade, summary: t.summary, checks });
+  }
+
   if (inp.email) {
     const e = inp.email;
     issueCount += e.failed.length;

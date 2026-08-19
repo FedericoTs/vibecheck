@@ -12,6 +12,7 @@ import type { RoutesScanResult } from '@/lib/scan/routes';
 import type { AiSurfaceResult } from '@/lib/scan/ai-surface';
 import type { PrivacyResult } from '@/lib/scan/privacy';
 import type { EmailAuthResult } from '@/lib/scan/email-auth';
+import type { TransportResult } from '@/lib/scan/transport';
 import type { SecretsScanResult } from '@/lib/scan/secrets';
 import type { FundamentalsResult } from '@/lib/scan/fundamentals';
 import type { LighthouseResult } from '@/lib/scan/lighthouse';
@@ -114,8 +115,9 @@ export default function Home() {
     const aiP = appUrl.trim() ? postScan<AiSurfaceResult>('/api/scan/ai') : Promise.resolve(null);
     const privacyP = appUrl.trim() ? postScan<PrivacyResult>('/api/scan/privacy') : Promise.resolve(null);
     const emailP = appUrl.trim() ? postScan<EmailAuthResult>('/api/scan/email') : Promise.resolve(null);
+    const transportP = appUrl.trim() ? postScan<TransportResult>('/api/scan/transport') : Promise.resolve(null);
     try {
-      const [hdr, paths, secrets, fundamentals, routes, ai, privacy, email] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, routesP, aiP, privacyP, emailP]);
+      const [hdr, paths, secrets, fundamentals, routes, ai, privacy, email, transport] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, routesP, aiP, privacyP, emailP, transportP]);
       if (appUrl.trim() && !hdr && !paths && !secrets && !fundamentals) {
         setError('Could not reach that app URL — is it live and public?');
       }
@@ -138,7 +140,7 @@ export default function Home() {
       ]);
       if (secrets?.firebase) setAutoDetected(true);
 
-      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals, privacy, email };
+      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals, privacy, email, transport };
       setInputs(base);
 
       // Lighthouse is slow (10-30s) — render the security card now, fill it in when

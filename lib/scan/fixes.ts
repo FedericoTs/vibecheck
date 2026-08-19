@@ -33,6 +33,8 @@ const CATEGORY_FIX: Record<string, string> = {
     'Do not load trackers or set analytics cookies until the visitor has actively opted in. Gate every analytics/marketing script behind a consent choice (default to OFF), or switch to cookieless analytics such as Plausible/Umami which need no banner at all.',
   email:
     'Publish SPF and DMARC DNS records for your domain. Without them anyone can send email that appears to come from you — including password-reset lookalikes aimed at your own users.',
+  transport:
+    'Fix how traffic reaches your app: keep the TLS certificate renewed, redirect plain http to https, and never redirect to a URL taken straight from a query parameter.',
   fundamentals: 'Add the missing tag to the page <head>.',
   lighthouse:
     'Improve this Lighthouse category — the report at pagespeed.web.dev lists the specific opportunities for this page.',
@@ -47,6 +49,10 @@ const LABEL_FIX: Array<[RegExp, string]> = [
   [/privacy policy/i, 'Add a privacy policy page and link it from the footer, stating what you collect, why, on what legal basis, who you share it with, and how to request deletion.'],
   [/mcp/i, 'Require authentication on your MCP server before it will answer `tools/list` or run a tool. An MCP endpoint that describes its tools to anonymous callers is handing an attacker a map of your internal capabilities — and many such servers can also execute code.'],
   [/chat endpoint|ai endpoint|completion endpoint|generation endpoint/i, 'Require a signed-in session on the server before calling the model, add a per-user rate limit, and cap max_tokens. As it stands anyone can run completions on your account — the bill is yours.'],
+  [/no open redirect/i, 'Never redirect to a URL taken from a query parameter. Allow only relative paths (reject anything starting with http:// , https:// or //), or check the target against an allowlist of your own routes. As it stands an attacker can send a link on YOUR domain that lands the victim on theirs.'],
+  [/certificate is current|certificate renewal/i, "Renew the TLS certificate. If you manage it yourself, automate renewal with certbot or your host's managed certificates — an expired certificate shows every visitor a full-page browser warning and takes the app down in practice."],
+  [/certificate matches/i, 'Issue a certificate that covers the hostname people actually visit (including the www/apex variant), or point the domain at the host that holds the right certificate.'],
+  [/plain http redirects/i, 'Redirect all http traffic to https with a 301, and add HSTS so browsers stop trying http at all.'],
   [/openapi|swagger|api docs/i, 'Do not publish your API schema unless the API is meant to be public. Disable the docs route in production (FastAPI: `docs_url=None, redoc_url=None, openapi_url=None`; NestJS: only call SwaggerModule.setup outside production), or put it behind authentication.'],
   [/spf record/i, 'Add a TXT record at your domain apex listing who may send mail for you, ending in -all, e.g. `v=spf1 include:_spf.google.com -all`. If you send no mail at all, publish `v=spf1 -all`.'],
   [/dmarc record published/i, 'Add a TXT record at `_dmarc.yourdomain.com`, starting at monitor mode: `v=DMARC1; p=none; rua=mailto:you@yourdomain.com`. Watch the reports for a week, then tighten to quarantine and then reject.'],
