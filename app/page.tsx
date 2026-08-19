@@ -45,6 +45,22 @@ function tone(grade: Grade | null): string {
   return 'text-muted border-line';
 }
 
+/**
+ * A proportional pass/fail bar. Pure CSS — no chart library, which keeps the
+ * bundle small and matches the rest of the type. It encodes the same numbers
+ * shown as text, so it adds a read-at-a-glance layer without inventing data.
+ */
+function PassBar({ passed, total, className = '' }: { passed: number; total: number; className?: string }) {
+  if (total <= 0) return null;
+  const pct = Math.round((passed / total) * 100);
+  return (
+    <div className={`flex h-1.5 w-full overflow-hidden bg-line ${className}`} role="img" aria-label={`${passed} of ${total} checks passed`}>
+      <div className="bg-safe transition-all duration-500" style={{ width: `${pct}%` }} />
+      <div className="bg-danger transition-all duration-500" style={{ width: `${100 - pct}%` }} />
+    </div>
+  );
+}
+
 /** One ✓/✗ row, with its fix inline when it failed. */
 function CheckRow({ c, categoryKey }: { c: CheckItem; categoryKey: string }) {
   return (
@@ -150,6 +166,7 @@ function GradeGrid({ categories }: { categories: ReportCategory[] }) {
             <p className={`mt-1 font-mono text-[11px] ${fails > 0 ? 'text-danger' : 'text-faint'}`}>
               {fails > 0 ? `${fails} to fix` : 'all clear'}
             </p>
+            <PassBar passed={c.checks.length - fails} total={c.checks.length} className="mt-2" />
           </div>
         );
       })}
@@ -508,6 +525,7 @@ export default function Home() {
                 <p className="kicker text-faint">checks run</p>
               </div>
             </div>
+            <PassBar passed={report.passed} total={report.total} />
           </div>
 
           {autoDetected && (
@@ -542,16 +560,41 @@ export default function Home() {
             </div>
           )}
 
-          {/* tenant-guard funnel — only when there's an actual database exposure */}
-          {report.categories.some((c) => c.key === 'supabase' && c.checks.some((k) => !k.pass)) && (
-            <div className="mt-4 border border-line bg-panel p-5">
-              <p className="kicker mb-2">Stop it shipping again</p>
-              <p className="text-sm text-muted">
-                Add a guard test to your CI so a cross-tenant leak fails the build before it merges:
+          {/* What a URL scanner genuinely cannot see — stated plainly, because a
+              silent limit reads as "checked and clean". Only shown when a
+              database was actually found, since otherwise it is irrelevant. */}
+          {report.categories.some((c) => c.key === 'supabase' || c.key === 'firebase') && (
+            <div className="mt-6 border border-line bg-panel p-5">
+              <p className="kicker mb-2">What this scan cannot see</p>
+              <p className="text-sm leading-relaxed text-muted">
+                vibecheck looks at your app from the outside — the same view a stranger has. Some
+                failures only exist inside your code, and no URL scanner can reach them:
               </p>
-              <code className="mt-3 block border border-line bg-canvas px-3 py-2 font-mono text-xs text-safe">
+              <ul className="mt-3 space-y-1.5">
+                {[
+                  'an API route that forgets to filter by organisation (one user reading another tenant’s data)',
+                  'whether RLS isolates tenants on WRITES, not just reads',
+                  'a policy that exists only in production and in no migration',
+                  'SECURITY DEFINER functions the anon role can still execute',
+                ].map((t) => (
+                  <li key={t} className="flex items-start gap-2 text-xs leading-relaxed text-faint">
+                    <span className="mt-px text-muted">·</span>
+                    <span>{t}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-sm text-muted">
+                Those run in your repo, against a test database, as CI tests that fail the build:
+              </p>
+              <code className="mt-2 block border border-line bg-canvas px-3 py-2 font-mono text-xs text-safe">
                 npx tenant-guard prove
               </code>
+              <a
+                href="https://github.com/FedericoTs/tenant-guard"
+                className="mt-3 inline-block font-mono text-xs text-muted transition-colors hover:text-ink"
+              >
+                tenant-guard — free &amp; open source ↗
+              </a>
             </div>
           )}
 
