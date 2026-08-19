@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { safeFetch, UA } from '@/lib/scan/fetch';
-import { findSecrets, gradeSecrets, isSourceMap, countPublicGoogleKeys, type SecretFinding } from '@/lib/scan/secrets';
+import { findSecrets, gradeSecrets, isSourceMap, sourcesFromMap, countPublicGoogleKeys, type SecretFinding } from '@/lib/scan/secrets';
 import { discoverSupabase } from '@/lib/scan/discover';
 import { discoverFirebase, extractCollections } from '@/lib/scan/firebase';
 
@@ -115,15 +115,24 @@ export async function POST(request: Request): Promise<Response> {
   const firebaseCollections = firebase ? extractCollections(allCode) : [];
 
   // Are the source maps published? A .js.map republishes the original source —
-  // comments, unminified logic, sometimes keys that minification hid.
+  // comments, unminified logic, and secrets that minification hid. We both flag
+  // the exposure AND scan the restored source, because a key invisible in the
+  // shipped bundle can be readable in the map.
   const mapTargets = scripts.slice(0, 4).map((s) => `${s}.map`);
   const maps = await Promise.all(
     mapTargets.map(async (m) => {
       const body = await fetchText(m);
-      return isSourceMap(body ? 200 : 0, body) ? m.split('/').pop() ?? m : null;
+      if (!isSourceMap(body ? 200 : 0, body)) return null;
+      const source = sourcesFromMap(body);
+      // A secret found ONLY in the source map — tag it so the finding is honest
+      // about where it came from.
+      const fromMap = findSecrets(source).map((f) => ({ ...f, label: `${f.label} (in an exposed source map)` }));
+      return { name: m.split('/').pop() ?? m, fromMap };
     }),
   );
-  const exposedMaps = maps.filter((m): m is string => !!m);
+  const liveMaps = maps.filter((m): m is { name: string; fromMap: SecretFinding[] } => !!m);
+  const exposedMaps = liveMaps.map((m) => m.name);
+  for (const m of liveMaps) all.push(...m.fromMap);
 
   // Dedupe across HTML + every bundle.
   const seen = new Set<string>();

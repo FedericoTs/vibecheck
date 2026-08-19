@@ -41,6 +41,24 @@ export function countPublicGoogleKeys(text: string): number {
   return new Set([...text.matchAll(/\bAIza[0-9A-Za-z_-]{35}\b/g)].map((m) => m[0])).size;
 }
 
+/**
+ * The ORIGINAL source a source map republishes, from its `sourcesContent` array.
+ * Minification frequently drops or mangles string literals, so a key that is
+ * invisible in the shipped bundle can be plainly readable here — which is
+ * exactly why a published .map is worth scanning, not just flagging.
+ */
+export function sourcesFromMap(body: string): string {
+  try {
+    const map = JSON.parse(body) as { sourcesContent?: unknown };
+    if (Array.isArray(map.sourcesContent)) {
+      return map.sourcesContent.filter((s): s is string => typeof s === 'string').join('\n');
+    }
+  } catch {
+    /* not a parseable map */
+  }
+  return '';
+}
+
 /** Is this response body an actual source map (not an SPA HTML fallback)? */
 export function isSourceMap(status: number, body: string): boolean {
   if (status !== 200) return false;

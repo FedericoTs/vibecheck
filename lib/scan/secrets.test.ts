@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findSecrets, jwtRole, redact, gradeSecrets, isSourceMap, countPublicGoogleKeys, type SecretFinding } from './secrets';
+import { findSecrets, jwtRole, redact, gradeSecrets, isSourceMap, sourcesFromMap, countPublicGoogleKeys, type SecretFinding } from './secrets';
 
 const b64url = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const jwt = (payload: object) => `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(payload)}.abcdefghij`;
@@ -102,5 +102,27 @@ describe('gradeSecrets', () => {
   it('only a medium (e.g. Google key) -> C; nothing -> A', () => {
     expect(gradeSecrets([f('medium', 'google-api')]).grade).toBe('C');
     expect(gradeSecrets([]).grade).toBe('A');
+  });
+});
+
+describe('sourcesFromMap — reading the source a map republishes', () => {
+  it('extracts sourcesContent so a secret hidden by minification becomes findable', () => {
+    const secret = 'sk' + '_live_' + 'A'.repeat(24);
+    const map = JSON.stringify({
+      version: 3,
+      sources: ['src/config.ts'],
+      sourcesContent: ['export const STRIPE = "' + secret + '";'],
+      mappings: 'AAAA',
+    });
+    const source = sourcesFromMap(map);
+    expect(source).toContain(secret);
+    // and the end-to-end intent: the secret scanner finds it in the restored source
+    expect(findSecrets(source).map((f) => f.id)).toContain('stripe-secret');
+  });
+
+  it('returns empty for a map with no sourcesContent, and for junk', () => {
+    expect(sourcesFromMap(JSON.stringify({ version: 3, sources: ['a.ts'] }))).toBe('');
+    expect(sourcesFromMap('not json at all')).toBe('');
+    expect(sourcesFromMap(JSON.stringify({ sourcesContent: [null, 42] }))).toBe('');
   });
 });
