@@ -10,9 +10,10 @@ import type { AiSurfaceResult } from './ai-surface';
 import type { PrivacyResult } from './privacy';
 import type { EmailAuthResult } from './email-auth';
 import type { TransportResult } from './transport';
+import type { VisibilityResult } from './visibility';
 import { worstGrade } from './grade';
 
-export type CategoryGroup = 'security' | 'privacy' | 'basics' | 'performance';
+export type CategoryGroup = 'security' | 'privacy' | 'visibility' | 'basics' | 'performance';
 
 /** One thing the tool checked, and whether it passed. Shown as a ✓/✗ line. */
 export interface CheckItem {
@@ -53,6 +54,7 @@ export interface ReportInputs {
   privacy?: PrivacyResult | null;
   email?: EmailAuthResult | null;
   transport?: TransportResult | null;
+  visibility?: VisibilityResult | null;
 }
 
 const VERDICT: Record<Grade, string> = {
@@ -262,6 +264,12 @@ export function combineReport(inp: ReportInputs): Report {
     // drag the security headline (nor be dragged by it).
     const checks: CheckItem[] = pr.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail }));
     categories.push({ key: 'privacy', group: 'privacy', label: 'EU privacy (GDPR signals)', grade: pr.grade, summary: pr.summary, checks });
+  }
+
+  if (inp.visibility) {
+    const v = inp.visibility;
+    const checks = v.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail }));
+    categories.push({ key: 'visibility', group: 'visibility', label: 'AI & search visibility', grade: v.grade, summary: v.summary, checks });
   }
 
   if (inp.fundamentals) {

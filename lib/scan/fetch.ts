@@ -10,7 +10,7 @@ export const UA = 'vibecheck/0.1 (+https://github.com/FedericoTs/vibecheck)';
  */
 export async function safeFetch(
   start: URL,
-  opts: { timeoutMs?: number; maxRedirects?: number } = {},
+  opts: { timeoutMs?: number; maxRedirects?: number; headers?: Record<string, string> } = {},
 ): Promise<{ response: Response; url: URL }> {
   const timeoutMs = opts.timeoutMs ?? 8000;
   const maxRedirects = opts.maxRedirects ?? 4;
@@ -24,7 +24,7 @@ export async function safeFetch(
         method: 'GET',
         redirect: 'manual',
         signal: controller.signal,
-        headers: { 'user-agent': UA },
+        headers: { 'user-agent': UA, ...opts.headers },
       });
     } finally {
       clearTimeout(timer);

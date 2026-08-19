@@ -13,6 +13,7 @@ import type { AiSurfaceResult } from '@/lib/scan/ai-surface';
 import type { PrivacyResult } from '@/lib/scan/privacy';
 import type { EmailAuthResult } from '@/lib/scan/email-auth';
 import type { TransportResult } from '@/lib/scan/transport';
+import type { VisibilityResult } from '@/lib/scan/visibility';
 import type { SecretsScanResult } from '@/lib/scan/secrets';
 import type { FundamentalsResult } from '@/lib/scan/fundamentals';
 import type { LighthouseResult } from '@/lib/scan/lighthouse';
@@ -138,8 +139,9 @@ export default function Home() {
     const privacyP = appUrl.trim() ? postScan<PrivacyResult>('/api/scan/privacy', 'EU privacy') : Promise.resolve(null);
     const emailP = appUrl.trim() ? postScan<EmailAuthResult>('/api/scan/email', 'email spoofing') : Promise.resolve(null);
     const transportP = appUrl.trim() ? postScan<TransportResult>('/api/scan/transport', 'HTTPS & redirects') : Promise.resolve(null);
+    const visibilityP = appUrl.trim() ? postScan<VisibilityResult>('/api/scan/visibility', 'AI & search visibility') : Promise.resolve(null);
     try {
-      const [hdr, paths, secrets, fundamentals, routes, ai, privacy, email, transport] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, routesP, aiP, privacyP, emailP, transportP]);
+      const [hdr, paths, secrets, fundamentals, routes, ai, privacy, email, transport, visibility] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, routesP, aiP, privacyP, emailP, transportP, visibilityP]);
       if (appUrl.trim()) {
         if (limited) {
           // The app is fine — we are. Saying "could not reach your app" here
@@ -170,7 +172,7 @@ export default function Home() {
       ]);
       if (secrets?.firebase) setAutoDetected(true);
 
-      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals, privacy, email, transport };
+      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals, privacy, email, transport, visibility };
       setInputs(base);
 
       // Lighthouse is slow (10-30s) — render the security card now, fill it in when
@@ -314,7 +316,7 @@ export default function Home() {
               <div className="flex items-center gap-2.5">
                 <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-warn" />
                 <p className="font-mono text-xs text-muted">
-                  Running 9 checks — database, secrets, routes, AI endpoints, headers, privacy, DNS, TLS…
+                  Running 10 checks — database, secrets, routes, AI endpoints, headers, privacy, DNS, TLS…
                 </p>
               </div>
               <p className="mt-1.5 pl-5 font-mono text-xs text-faint">usually 5–15 seconds</p>
@@ -407,7 +409,7 @@ export default function Home() {
           {(report.categories.some((c) => c.group === 'basics' || c.group === 'performance') || lhLoading) && (
             <div className="mt-8">
               <p className="kicker mb-3">
-                Fundamentals &amp; performance <span className="text-faint">· separate from the security grade</span>
+                Visibility, fundamentals &amp; performance <span className="text-faint">· separate from the security grade</span>
               </p>
               <div className="space-y-3">
                 {report.categories.some((c) => c.group === 'basics' || c.group === 'performance') && (

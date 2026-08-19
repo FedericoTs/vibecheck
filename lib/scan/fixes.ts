@@ -35,6 +35,8 @@ const CATEGORY_FIX: Record<string, string> = {
     'Publish SPF and DMARC DNS records for your domain. Without them anyone can send email that appears to come from you — including password-reset lookalikes aimed at your own users.',
   transport:
     'Fix how traffic reaches your app: keep the TLS certificate renewed, redirect plain http to https, and never redirect to a URL taken straight from a query parameter.',
+  visibility:
+    'Make sure the content is in the HTML the server sends, not only in the JavaScript, so crawlers and AI assistants can read it.',
   fundamentals: 'Add the missing tag to the page <head>.',
   lighthouse:
     'Improve this Lighthouse category — the report at pagespeed.web.dev lists the specific opportunities for this page.',
@@ -54,6 +56,10 @@ const LABEL_FIX: Array<[RegExp, string]> = [
   [/certificate matches/i, 'Issue a certificate that covers the hostname people actually visit (including the www/apex variant), or point the domain at the host that holds the right certificate.'],
   [/plain http redirects/i, 'Redirect all http traffic to https with a 301, and add HSTS so browsers stop trying http at all.'],
   [/openapi|swagger|api docs/i, 'Do not publish your API schema unless the API is meant to be public. Disable the docs route in production (FastAPI: `docs_url=None, redoc_url=None, openapi_url=None`; NestJS: only call SwaggerModule.setup outside production), or put it behind authentication.'],
+  [/content readable without javascript/i, 'Server-render or pre-render your pages so the text is in the HTML itself. In Next.js use Server Components or static generation instead of fetching everything client-side; with Vite/CRA add prerendering. Most crawlers and AI assistants never execute your JavaScript, so a client-only app is invisible to them.'],
+  [/structured data/i, 'Add JSON-LD (schema.org) describing what the page is — SoftwareApplication, Product, Article and so on. Assistants use it to understand and cite you correctly.'],
+  [/canonical url/i, 'Add a canonical link tag pointing at the preferred URL for each page.'],
+  [/sitemap published/i, 'Publish /sitemap.xml listing your real URLs (Next.js: app/sitemap.ts) so crawlers do not have to guess.'],
   [/spf record/i, 'Add a TXT record at your domain apex listing who may send mail for you, ending in -all, e.g. `v=spf1 include:_spf.google.com -all`. If you send no mail at all, publish `v=spf1 -all`.'],
   [/dmarc record published/i, 'Add a TXT record at `_dmarc.yourdomain.com`, starting at monitor mode: `v=DMARC1; p=none; rua=mailto:you@yourdomain.com`. Watch the reports for a week, then tighten to quarantine and then reject.'],
   [/dmarc actually enforced/i, 'Move your DMARC policy from p=none to p=quarantine, and then p=reject once your reports show only your own senders passing. p=none only monitors — forged mail still reaches inboxes.'],
