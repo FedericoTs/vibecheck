@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { scanSupabase } from '@/lib/scan/supabase';
 import { scanFirebase, type FirebaseConfig } from '@/lib/scan/firebase';
-import { combineReport, type ReportInputs, type ReportCategory } from '@/lib/scan/report';
+import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
 import { buildFixPrompt, fixFor } from '@/lib/scan/fixes';
 import type { Grade } from '@/lib/scan/types';
 import type { HeadersScanResult } from '@/lib/scan/headers';
@@ -28,38 +28,114 @@ function tone(grade: Grade | null): string {
   return 'text-muted border-line';
 }
 
+/** One ✓/✗ row, with its fix inline when it failed. */
+function CheckRow({ c, categoryKey }: { c: CheckItem; categoryKey: string }) {
+  return (
+    <li className="flex items-start gap-2.5 px-4 py-2.5">
+      <span className={`mt-px font-mono text-sm ${c.pass ? 'text-safe' : 'text-danger'}`}>{c.pass ? '✓' : '✗'}</span>
+      <div className="min-w-0 flex-1">
+        <span className={`text-sm ${c.pass ? 'text-muted' : 'text-ink'}`}>{c.label}</span>
+        {c.detail && <span className="mt-0.5 block break-words font-mono text-xs text-faint">{c.detail}</span>}
+        {!c.pass && (
+          <span className="mt-1.5 block border-l border-warn/40 pl-2.5 text-xs leading-relaxed text-muted">
+            <span className="text-warn">Fix: </span>
+            {fixFor(categoryKey, c)}
+          </span>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/**
+ * A category card. Failures are always visible; passing checks collapse behind a
+ * count — with ~78 checks, showing everything buries the handful that matter,
+ * but hiding the count entirely would lose the proof of how much was examined.
+ */
+function CategoryCard({ c }: { c: ReportCategory }) {
+  const failures = c.checks.filter((x) => !x.pass);
+  const passes = c.checks.filter((x) => x.pass);
+  const [showPasses, setShowPasses] = useState(false);
+
+  return (
+    <div className={`border bg-panel ${failures.length > 0 ? 'border-danger/30' : 'border-line'}`}>
+      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+        <p className="font-mono text-xs font-medium uppercase tracking-wider text-ink">{c.label}</p>
+        <span className={`border px-2 py-0.5 font-mono text-xs ${tone(c.grade)}`}>{c.grade ?? '—'}</span>
+      </div>
+
+      {c.checks.length === 0 ? (
+        <p className="px-4 py-3 text-sm text-muted">{c.summary}</p>
+      ) : (
+        <>
+          {failures.length > 0 && (
+            <ul className="divide-y divide-line-soft">
+              {failures.map((ck, i) => (
+                <CheckRow key={i} c={ck} categoryKey={c.key} />
+              ))}
+            </ul>
+          )}
+          {passes.length > 0 && (
+            <>
+              <button
+                onClick={() => setShowPasses((v) => !v)}
+                className={`flex w-full items-center justify-between px-4 py-2.5 text-left font-mono text-xs text-muted transition-colors hover:text-ink ${
+                  failures.length > 0 ? 'border-t border-line' : ''
+                }`}
+              >
+                <span>
+                  <span className="text-safe">✓</span> {passes.length} check{passes.length === 1 ? '' : 's'} passed
+                </span>
+                <span className="text-faint">{showPasses ? 'hide' : 'show'}</span>
+              </button>
+              {showPasses && (
+                <ul className="divide-y divide-line-soft border-t border-line">
+                  {passes.map((ck, i) => (
+                    <CheckRow key={i} c={ck} categoryKey={c.key} />
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function CategoryList({ categories }: { categories: ReportCategory[] }) {
   return (
     <div className="space-y-3">
       {categories.map((c) => (
-        <div key={c.key} className="border border-line bg-panel">
-          <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <p className="font-mono text-xs font-medium uppercase tracking-wider text-ink">{c.label}</p>
-            <span className={`border px-2 py-0.5 font-mono text-xs ${tone(c.grade)}`}>{c.grade ?? '—'}</span>
-          </div>
-          {c.checks.length > 0 ? (
-            <ul className="divide-y divide-line-soft">
-              {c.checks.map((ck, i) => (
-                <li key={i} className="flex items-start gap-2.5 px-4 py-2.5">
-                  <span className={`mt-px font-mono text-sm ${ck.pass ? 'text-safe' : 'text-danger'}`}>{ck.pass ? '✓' : '✗'}</span>
-                  <div className="min-w-0 flex-1">
-                    <span className={`text-sm ${ck.pass ? 'text-muted' : 'text-ink'}`}>{ck.label}</span>
-                    {ck.detail && <span className="mt-0.5 block break-words font-mono text-xs text-faint">{ck.detail}</span>}
-                    {!ck.pass && (
-                      <span className="mt-1.5 block border-l border-warn/40 pl-2.5 text-xs leading-relaxed text-muted">
-                        <span className="text-warn">Fix: </span>
-                        {fixFor(c.key, ck)}
-                      </span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="px-4 py-3 text-sm text-muted">{c.summary}</p>
-          )}
-        </div>
+        <CategoryCard key={c.key} c={c} />
       ))}
+    </div>
+  );
+}
+
+/** Every category at a glance — the whole report in one screen, before any scrolling. */
+function GradeGrid({ categories }: { categories: ReportCategory[] }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {categories.map((c) => {
+        const fails = c.checks.filter((x) => !x.pass).length;
+        return (
+          <div
+            key={c.key}
+            className={`border bg-panel px-3 py-2.5 ${fails > 0 ? 'border-danger/40' : 'border-line'}`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-mono text-[11px] uppercase leading-tight tracking-wide text-muted">{c.label}</p>
+              <span className={`shrink-0 font-mono text-sm font-semibold ${tone(c.grade).split(' ')[0]}`}>
+                {c.grade ?? '—'}
+              </span>
+            </div>
+            <p className={`mt-1 font-mono text-[11px] ${fails > 0 ? 'text-danger' : 'text-faint'}`}>
+              {fails > 0 ? `${fails} to fix` : 'all clear'}
+            </p>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -79,6 +155,9 @@ export default function Home() {
   const [autoDetected, setAutoDetected] = useState(false);
   const [skipped, setSkipped] = useState<string[]>([]);
   const [rateLimited, setRateLimited] = useState(false);
+  const [notifyEmail, setNotifyEmail] = useState('');
+  const [notifyState, setNotifyState] = useState<'idle' | 'sending' | 'done' | 'error'>('idle');
+  const [notifyError, setNotifyError] = useState('');
   const report = useMemo(() => (inputs ? combineReport(inputs) : null), [inputs]);
 
   async function run(e: React.FormEvent) {
@@ -223,6 +302,29 @@ export default function Home() {
     });
   }
 
+  async function joinWaitlist(e: React.FormEvent) {
+    e.preventDefault();
+    if (notifyState === 'sending') return;
+    setNotifyState('sending');
+    setNotifyError('');
+    try {
+      const r = await fetch('/api/notify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: notifyEmail }),
+      });
+      const j = await r.json().catch(() => null);
+      if (r.ok && j?.ok) setNotifyState('done');
+      else {
+        setNotifyError(j?.error ?? 'Could not add you just now.');
+        setNotifyState('error');
+      }
+    } catch {
+      setNotifyError('Could not add you just now.');
+      setNotifyState('error');
+    }
+  }
+
   function reset() {
     setInputs(null);
     setError('');
@@ -340,8 +442,10 @@ export default function Home() {
             <div className={`flex w-28 shrink-0 items-center justify-center border-r text-7xl font-semibold font-mono ${tone(report.overallGrade)}`}>
               {report.overallGrade}
             </div>
-            <div className="flex flex-col justify-center p-5">
-              <p className="kicker mb-1">Security grade</p>
+            <div className="flex min-w-0 flex-col justify-center p-5">
+              <p className="kicker mb-1 truncate">
+                Security grade{appUrl.trim() ? <span className="text-faint"> · {appUrl.replace(/^https?:\/\//, '')}</span> : null}
+              </p>
               <p className="font-display text-lg leading-snug">{report.verdict}</p>
               <p className="mt-2 font-mono text-xs text-muted">
                 <span className="text-safe">{report.passed}</span>/{report.total} checks passed
@@ -359,8 +463,13 @@ export default function Home() {
             </p>
           )}
 
+          {/* everything at a glance, before any scrolling */}
+          <div className="mt-3">
+            <GradeGrid categories={report.categories} />
+          </div>
+
           {/* security categories — the headline */}
-          <div className="mt-4">
+          <div className="mt-6">
             <CategoryList categories={report.categories.filter((c) => c.group === 'security')} />
           </div>
 
@@ -483,6 +592,46 @@ export default function Home() {
               </a>
             </div>
           </div>
+        </section>
+      )}
+
+      {report && (
+        <section className="mt-10 border border-line bg-panel p-5">
+          {notifyState === 'done' ? (
+            <p className="font-mono text-xs text-safe">
+              ✓ You&apos;re on the list. We&apos;ll email you when monitoring is ready — nothing else.
+            </p>
+          ) : (
+            <>
+              <p className="kicker mb-2">Want to know if this changes?</p>
+              <p className="text-sm leading-relaxed text-muted">
+                Apps drift. A key gets committed, a policy gets loosened, a certificate lapses. Leave your
+                email and we&apos;ll re-check weekly and tell you if something breaks.
+              </p>
+              <form onSubmit={joinWaitlist} className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="email"
+                  required
+                  value={notifyEmail}
+                  onChange={(e) => setNotifyEmail(e.target.value)}
+                  placeholder="you@yourdomain.com"
+                  className="min-w-0 flex-1 border border-line bg-canvas px-3 py-2.5 font-mono text-base text-ink placeholder-faint outline-none focus:border-ink sm:text-xs"
+                />
+                <button
+                  type="submit"
+                  disabled={notifyState === 'sending'}
+                  className="border border-ink bg-ink px-5 py-2.5 font-mono text-xs font-medium uppercase tracking-wider text-canvas transition hover:bg-transparent hover:text-ink disabled:opacity-40"
+                >
+                  {notifyState === 'sending' ? 'adding…' : 'notify me'}
+                </button>
+              </form>
+              {notifyState === 'error' && <p className="mt-2 font-mono text-xs text-danger">{notifyError}</p>}
+              <p className="mt-3 text-xs leading-relaxed text-faint">
+                Only your email is stored, and only because you typed it. Your scan stays anonymous — we
+                never record the app you checked or what we found.
+              </p>
+            </>
+          )}
         </section>
       )}
 
