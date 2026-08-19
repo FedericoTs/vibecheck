@@ -20,6 +20,15 @@ export function gradeExposure(exposedCount: number, tablesFound: number): GradeR
   return { grade: 'F', score: 10, label: `${exposedCount} tables are readable by anyone` };
 }
 
+/** Map a 0-100 score to a letter grade. */
+export function scoreToGrade(score: number): Grade {
+  if (score >= 90) return 'A';
+  if (score >= 75) return 'B';
+  if (score >= 60) return 'C';
+  if (score >= 40) return 'D';
+  return 'F';
+}
+
 const ORDER: Grade[] = ['A', 'B', 'C', 'D', 'F'];
 
 /** Worst (lowest) grade across categories — an overall report card is only as good as its weakest scan. */
