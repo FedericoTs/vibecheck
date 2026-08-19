@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { scanSupabase } from '@/lib/scan/supabase';
 import { combineReport, type ReportInputs, type ReportCategory } from '@/lib/scan/report';
 import type { Grade } from '@/lib/scan/types';
@@ -60,7 +60,32 @@ export default function Home() {
   const [lhLoading, setLhLoading] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [stats, setStats] = useState<{ enabled: boolean; total: number; leaking: number; secrets: number } | null>(null);
+  const [contributed, setContributed] = useState(false);
   const report = useMemo(() => (inputs ? combineReport(inputs) : null), [inputs]);
+
+  useEffect(() => {
+    fetch('/api/stats')
+      .then((r) => r.json())
+      .then(setStats)
+      .catch(() => {});
+  }, []);
+
+  async function addToTally() {
+    if (!report || contributed) return;
+    setContributed(true);
+    const secretsFound = report.categories.find((c) => c.key === 'secrets')?.checks.filter((k) => !k.pass).length ?? 0;
+    try {
+      await fetch('/api/stats/record', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ leaking: report.issueCount > 0, secrets: secretsFound }),
+      });
+      fetch('/api/stats').then((r) => r.json()).then(setStats).catch(() => {});
+    } catch {
+      /* best-effort */
+    }
+  }
 
   async function run(e: React.FormEvent) {
     e.preventDefault();
@@ -72,6 +97,7 @@ export default function Home() {
     setLoading(true);
     setInputs(null);
     setLhLoading(false);
+    setContributed(false);
     const postScan = <T,>(endpoint: string): Promise<T | null> =>
       fetch(endpoint, {
         method: 'POST',
@@ -157,6 +183,29 @@ export default function Home() {
             </p>
           </header>
 
+          {stats?.enabled && stats.total > 0 && (
+            <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-1 border border-line bg-panel px-4 py-3 font-mono text-xs">
+              <span>
+                <span className="font-medium text-ink">{stats.total.toLocaleString()}</span>{' '}
+                <span className="text-muted">apps checked</span>
+              </span>
+              <span className="text-faint">·</span>
+              <span>
+                <span className="font-medium text-danger">{Math.round((stats.leaking / stats.total) * 100)}%</span>{' '}
+                <span className="text-muted">were leaking</span>
+              </span>
+              {stats.secrets > 0 && (
+                <>
+                  <span className="text-faint">·</span>
+                  <span>
+                    <span className="font-medium text-ink">{stats.secrets.toLocaleString()}</span>{' '}
+                    <span className="text-muted">secret keys caught</span>
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+
           <form onSubmit={run} className="border border-line bg-panel">
             <div className="border-b border-line p-4">
               <label className="kicker block mb-2">Your app URL</label>
@@ -215,7 +264,8 @@ export default function Home() {
 
           <p className="mt-6 text-xs leading-relaxed text-faint">
             Your keys and data never leave your machine — the database check runs entirely in your
-            browser, and vibecheck stores nothing. It only shows what any visitor can already reach.
+            browser, and vibecheck stores nothing about your project. It only shows what any visitor
+            can already reach.
           </p>
         </>
       )}
@@ -305,13 +355,36 @@ export default function Home() {
               <a href={GITHUB_URL} className="border border-line px-4 py-2 font-mono text-xs text-muted transition-colors hover:border-ink hover:text-ink">
                 ★ star on GitHub
               </a>
+              {stats?.enabled && (
+                <button
+                  onClick={addToTally}
+                  disabled={contributed}
+                  className="border border-line px-4 py-2 font-mono text-xs text-muted transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
+                >
+                  {contributed ? '✓ added to the tally' : '+ add your grade to the tally (anonymous)'}
+                </button>
+              )}
             </div>
           </div>
         </section>
       )}
 
-      <footer className="mt-16 border-t border-line pt-5 kicker text-faint">
-        free · open source · no signup · no telemetry · MIT
+      <footer className="mt-16 border-t border-line pt-6">
+        <p className="kicker mb-3">More free, open-source tools by @federico_sciuca</p>
+        <div className="flex flex-col gap-2 font-mono text-xs">
+          <a href="https://github.com/FedericoTs/tenant-guard" className="text-muted transition-colors hover:text-ink">
+            tenant-guard <span className="text-faint">— CI guard tests that catch multi-tenant leaks before they ship ↗</span>
+          </a>
+          <a href="https://github.com/FedericoTs/regulatory-crosswalk-provenance" className="text-muted transition-colors hover:text-ink">
+            regulatory-crosswalk <span className="text-faint">— open dataset mapping NIS2 / DORA / ISO 27001 ↗</span>
+          </a>
+        </div>
+        <p className="mt-5 kicker text-faint">
+          free · open source · no signup · MIT ·{' '}
+          <a href={X_URL} className="transition-colors hover:text-ink">
+            @federico_sciuca
+          </a>
+        </p>
       </footer>
     </main>
   );
