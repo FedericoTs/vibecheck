@@ -24,6 +24,19 @@ export default function LeakyDemo() {
   // Built here (not written literally) so the source file doesn't trip secret
   // scanners, while the RENDERED page still contains the complete strings.
   const fakeDbUrl = 'postgres' + 'ql://demo:hunter2@db.invalid:5432/app';
+  // A realistic Firebase config block (the project does not exist), so the
+  // discovery + client-side probe path is exercised end to end on a page we own
+  // rather than against somebody else's misconfigured database.
+  const fakeFirebase = `const firebaseConfig = {
+  apiKey: "AIza${'S'.repeat(4)}vibecheckDemoNotARealKey00000",
+  authDomain: "vibecheck-demo-fixture.firebaseapp.com",
+  projectId: "vibecheck-demo-fixture",
+  storageBucket: "vibecheck-demo-fixture.appspot.com"
+};
+initializeApp(firebaseConfig);
+const q = collection(db, "users");
+getDocs(collection(db, "orders"));`;
+
   const fakeConfig = `window.__APP_CONFIG__ = {
   STRIPE_SECRET_KEY: "${fakeStripe}",
   SUPABASE_SECRET: "${fakeSupabaseSecret}",
@@ -66,6 +79,9 @@ export default function LeakyDemo() {
 
       {/* The planted "leak" — inert placeholders for the secret scanner to find. */}
       <script dangerouslySetInnerHTML={{ __html: fakeConfig }} />
+      {/* A Firebase config for a project that does not exist, so the Firebase
+          discovery + probe path is exercised without touching anyone's data. */}
+      <script dangerouslySetInnerHTML={{ __html: fakeFirebase }} />
     </main>
   );
 }
