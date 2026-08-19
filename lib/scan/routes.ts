@@ -16,7 +16,7 @@ import { scoreToGrade } from './grade';
  * GET-only, read-only — it never posts, mutates, or attempts a login.
  */
 
-export type RouteKind = 'admin' | 'debug' | 'data';
+export type RouteKind = 'admin' | 'debug' | 'data' | 'schema';
 
 export interface RouteProbe {
   path: string;
@@ -54,6 +54,10 @@ export const ROUTE_PROBES: RouteProbe[] = [
   { path: '/api/debug', label: 'Debug endpoint (/api/debug)', kind: 'debug' },
   { path: '/debug', label: 'Debug page (/debug)', kind: 'debug' },
   { path: '/phpinfo.php', label: 'phpinfo()', kind: 'debug' },
+  // Schema disclosure: hands an attacker your full API surface in one request.
+  { path: '/openapi.json', label: 'OpenAPI spec (/openapi.json)', kind: 'schema' },
+  { path: '/swagger.json', label: 'Swagger spec (/swagger.json)', kind: 'schema' },
+  { path: '/api-docs', label: 'API docs (/api-docs)', kind: 'schema' },
 ];
 
 // ── pure classification ──────────────────────────────────────────────
@@ -112,6 +116,20 @@ export function looksLikeDebugOutput(body: string): boolean {
     /\b(process\.env|environment variables|env dump|debug ?mode: ?(on|true))\b/.test(s) ||
     /\b(server-status|apache server status|whitelabel error page)\b/.test(s)
   );
+}
+
+/**
+ * A machine-readable API description (OpenAPI/Swagger) or its docs UI. Publishing
+ * one is a deliberate choice for a public API and a mistake for a private app —
+ * it enumerates every endpoint, parameter and shape in a single request.
+ */
+export function looksLikeApiSchema(contentType: string, body: string): boolean {
+  const head = body.slice(0, 4000);
+  if (/application\/(json|.*\+json)/i.test(contentType)) {
+    return /"(openapi|swagger)"\s*:\s*"/.test(head);
+  }
+  // A rendered docs UI (Swagger UI / Redoc / Scalar) counts too.
+  return /swagger-ui|redoc|<title[^>]*>[^<]*(api docs|swagger|redoc)|scalar-api-reference/i.test(head);
 }
 
 /** Does the body look like a real admin UI rather than a marketing page? */
@@ -177,6 +195,12 @@ export function classifyRoute(probe: RouteProbe, res: ProbeResponse, baseline: s
   }
   // A 200-status "not found" page means the route isn't really there.
   if (looksLikeSoftNotFound(res.body)) return { ...base, verdict: 'absent' };
+
+  if (probe.kind === 'schema') {
+    return looksLikeApiSchema(res.contentType, res.body)
+      ? { ...base, verdict: 'exposed', detail: 'your full API surface is published to anyone' }
+      : { ...base, verdict: 'absent' };
+  }
 
   if (probe.kind === 'debug') {
     return looksLikeDebugOutput(res.body)

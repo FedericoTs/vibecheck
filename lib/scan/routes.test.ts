@@ -116,3 +116,25 @@ describe('gradeRoutes', () => {
     expect(gradeRoutes([mk('inconclusive'), mk('inconclusive')]).grade).toBe('A');
   });
 });
+
+describe('schema disclosure (OpenAPI / Swagger)', () => {
+  const schemaProbe = ROUTE_PROBES.find((p) => p.path === '/openapi.json')!;
+  const docsProbe = ROUTE_PROBES.find((p) => p.path === '/api-docs')!;
+
+  it('EXPOSED when a real OpenAPI document is served', () => {
+    const spec = JSON.stringify({ openapi: '3.0.0', paths: { '/users': {} } });
+    const f = classifyRoute(schemaProbe, { status: 200, contentType: 'application/json', body: spec, redirected: false }, SHELL);
+    expect(f.verdict).toBe('exposed');
+    expect(f.detail).toMatch(/full API surface/);
+  });
+
+  it('EXPOSED for a rendered Swagger UI page', () => {
+    const html = '<html><head><title>API Docs</title></head><body><div id="swagger-ui"></div>' + 'x'.repeat(1200) + '</body></html>';
+    expect(classifyRoute(docsProbe, { status: 200, contentType: 'text/html', body: html, redirected: false }, SHELL).verdict).toBe('exposed');
+  });
+
+  it('ordinary JSON or an SPA shell at those paths is NOT a schema finding', () => {
+    expect(classifyRoute(schemaProbe, { status: 200, contentType: 'application/json', body: '{"ok":true}', redirected: false }, SHELL).verdict).toBe('absent');
+    expect(classifyRoute(docsProbe, { status: 200, contentType: 'text/html', body: SHELL, redirected: false }, SHELL).verdict).toBe('inconclusive');
+  });
+});
