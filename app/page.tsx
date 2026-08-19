@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import { scanSupabase } from '@/lib/scan/supabase';
 import { scanFirebase, type FirebaseConfig } from '@/lib/scan/firebase';
 import { combineReport, type ReportInputs, type ReportCategory } from '@/lib/scan/report';
+import { buildFixPrompt, fixFor } from '@/lib/scan/fixes';
 import type { Grade } from '@/lib/scan/types';
 import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
@@ -39,6 +40,12 @@ function CategoryList({ categories }: { categories: ReportCategory[] }) {
                   <div className="min-w-0 flex-1">
                     <span className={`text-sm ${ck.pass ? 'text-muted' : 'text-ink'}`}>{ck.label}</span>
                     {ck.detail && <span className="mt-0.5 block break-words font-mono text-xs text-faint">{ck.detail}</span>}
+                    {!ck.pass && (
+                      <span className="mt-1.5 block border-l border-warn/40 pl-2.5 text-xs leading-relaxed text-muted">
+                        <span className="text-warn">Fix: </span>
+                        {fixFor(c.key, ck)}
+                      </span>
+                    )}
                   </div>
                 </li>
               ))}
@@ -62,6 +69,7 @@ export default function Home() {
   const [lhLoading, setLhLoading] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [fixCopied, setFixCopied] = useState(false);
   const [autoDetected, setAutoDetected] = useState(false);
   const report = useMemo(() => (inputs ? combineReport(inputs) : null), [inputs]);
 
@@ -152,6 +160,15 @@ export default function Home() {
     navigator.clipboard?.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
+    });
+  }
+
+  function copyFixPrompt() {
+    if (!report) return;
+    // Deterministic prompt — no LLM, so it costs nothing and can't hallucinate a wrong fix.
+    navigator.clipboard?.writeText(buildFixPrompt(report, appUrl.trim() || undefined)).then(() => {
+      setFixCopied(true);
+      setTimeout(() => setFixCopied(false), 2400);
     });
   }
 
@@ -320,8 +337,18 @@ export default function Home() {
             </div>
           )}
 
-          {/* actions — the share loop + a clear follow CTA */}
+          {/* actions — fixing comes first when there's something to fix */}
           <div className="mt-8 space-y-3">
+            {report.issueCount > 0 && (
+              <button
+                onClick={copyFixPrompt}
+                className="w-full border border-warn bg-warn/10 px-5 py-3 font-mono text-xs font-medium uppercase tracking-wider text-warn transition hover:bg-warn/20"
+              >
+                {fixCopied
+                  ? '✓ copied — paste it into Lovable, Cursor, v0 or Claude'
+                  : `⚡ copy the fix prompt (${report.issueCount} issue${report.issueCount === 1 ? '' : 's'})`}
+              </button>
+            )}
             <button
               onClick={share}
               className="w-full border border-ink bg-ink px-5 py-3 font-mono text-xs font-medium uppercase tracking-wider text-canvas transition hover:bg-transparent hover:text-ink"

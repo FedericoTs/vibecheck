@@ -196,14 +196,14 @@ export function combineReport(inp: ReportInputs): Report {
     const h = inp.headers;
     issueCount += h.missing.length;
     securityGrades.push(h.grade);
-    const checks: CheckItem[] = h.checks.map((c) => ({ label: c.label, pass: c.present, detail: c.present ? undefined : c.fix }));
+    const checks: CheckItem[] = h.checks.map((c) => ({ label: c.label, pass: c.present, detail: c.present ? undefined : 'not set on your responses' }));
     categories.push({ key: 'headers', group: 'security', label: 'Security headers', grade: h.grade, summary: h.summary, checks });
   }
 
   // ── basics + performance (secondary — own grades, never drag security) ─
   if (inp.fundamentals) {
     const f = inp.fundamentals;
-    const checks: CheckItem[] = f.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.pass ? undefined : c.fix }));
+    const checks: CheckItem[] = f.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.pass ? undefined : 'missing from the page' }));
     categories.push({ key: 'fundamentals', group: 'basics', label: 'Fundamentals', grade: f.grade, summary: f.summary, checks });
   }
   if (inp.lighthouse) {
