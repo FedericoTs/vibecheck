@@ -166,7 +166,7 @@ export default function Home() {
       {/* status bar */}
       <div className="mb-14 flex items-center justify-between kicker">
         <span>vibecheck ▸ security scan</span>
-        <a href={GITHUB_URL} className="text-faint hover:text-ink transition-colors">
+        <a href={GITHUB_URL} className="-my-2 py-2 text-faint transition-colors hover:text-ink">
           open source ↗
         </a>
       </div>
@@ -194,7 +194,7 @@ export default function Home() {
                 value={appUrl}
                 onChange={(e) => setAppUrl(e.target.value)}
                 placeholder="myapp.com"
-                className="w-full bg-transparent font-mono text-sm text-ink placeholder-faint outline-none"
+                className="w-full bg-transparent font-mono text-base text-ink placeholder-faint outline-none sm:text-sm"
               />
             </div>
 
@@ -214,7 +214,7 @@ export default function Home() {
                     value={sbUrl}
                     onChange={(e) => setSbUrl(e.target.value)}
                     placeholder="https://xxxx.supabase.co"
-                    className="w-full bg-transparent font-mono text-sm text-ink placeholder-faint outline-none"
+                    className="w-full bg-transparent font-mono text-base text-ink placeholder-faint outline-none sm:text-sm"
                   />
                 </div>
                 <div>
@@ -223,7 +223,7 @@ export default function Home() {
                     value={anonKey}
                     onChange={(e) => setAnonKey(e.target.value)}
                     placeholder="eyJhbGci…"
-                    className="w-full bg-transparent font-mono text-xs text-ink placeholder-faint outline-none"
+                    className="w-full bg-transparent font-mono text-base text-ink placeholder-faint outline-none sm:text-xs"
                   />
                 </div>
               </div>
@@ -351,10 +351,10 @@ export default function Home() {
       <footer className="mt-16 border-t border-line pt-6">
         <p className="kicker mb-3">More free, open-source tools by @federico_sciuca</p>
         <div className="flex flex-col gap-2 font-mono text-xs">
-          <a href="https://github.com/FedericoTs/tenant-guard" className="text-muted transition-colors hover:text-ink">
+          <a href="https://github.com/FedericoTs/tenant-guard" className="py-1.5 text-muted transition-colors hover:text-ink">
             tenant-guard <span className="text-faint">— CI guard tests that catch multi-tenant leaks before they ship ↗</span>
           </a>
-          <a href="https://github.com/FedericoTs/regulatory-crosswalk-provenance" className="text-muted transition-colors hover:text-ink">
+          <a href="https://github.com/FedericoTs/regulatory-crosswalk-provenance" className="py-1.5 text-muted transition-colors hover:text-ink">
             regulatory-crosswalk <span className="text-faint">— open dataset mapping NIS2 / DORA / ISO 27001 ↗</span>
           </a>
         </div>
