@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { scanSupabase } from '@/lib/scan/supabase';
 import { combineReport, type ReportInputs, type ReportCategory } from '@/lib/scan/report';
 import type { Grade } from '@/lib/scan/types';
@@ -60,32 +60,7 @@ export default function Home() {
   const [lhLoading, setLhLoading] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
-  const [stats, setStats] = useState<{ enabled: boolean; total: number; leaking: number; secrets: number } | null>(null);
-  const [contributed, setContributed] = useState(false);
   const report = useMemo(() => (inputs ? combineReport(inputs) : null), [inputs]);
-
-  useEffect(() => {
-    fetch('/api/stats')
-      .then((r) => r.json())
-      .then(setStats)
-      .catch(() => {});
-  }, []);
-
-  async function addToTally() {
-    if (!report || contributed) return;
-    setContributed(true);
-    const secretsFound = report.categories.find((c) => c.key === 'secrets')?.checks.filter((k) => !k.pass).length ?? 0;
-    try {
-      await fetch('/api/stats/record', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ leaking: report.issueCount > 0, secrets: secretsFound }),
-      });
-      fetch('/api/stats').then((r) => r.json()).then(setStats).catch(() => {});
-    } catch {
-      /* best-effort */
-    }
-  }
 
   async function run(e: React.FormEvent) {
     e.preventDefault();
@@ -97,7 +72,6 @@ export default function Home() {
     setLoading(true);
     setInputs(null);
     setLhLoading(false);
-    setContributed(false);
     const postScan = <T,>(endpoint: string): Promise<T | null> =>
       fetch(endpoint, {
         method: 'POST',
@@ -182,29 +156,6 @@ export default function Home() {
               headers. Point vibecheck at your app and see what a stranger already can. In seconds.
             </p>
           </header>
-
-          {stats?.enabled && stats.total > 0 && (
-            <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-1 border border-line bg-panel px-4 py-3 font-mono text-xs">
-              <span>
-                <span className="font-medium text-ink">{stats.total.toLocaleString()}</span>{' '}
-                <span className="text-muted">apps checked</span>
-              </span>
-              <span className="text-faint">·</span>
-              <span>
-                <span className="font-medium text-danger">{Math.round((stats.leaking / stats.total) * 100)}%</span>{' '}
-                <span className="text-muted">were leaking</span>
-              </span>
-              {stats.secrets > 0 && (
-                <>
-                  <span className="text-faint">·</span>
-                  <span>
-                    <span className="font-medium text-ink">{stats.secrets.toLocaleString()}</span>{' '}
-                    <span className="text-muted">secret keys caught</span>
-                  </span>
-                </>
-              )}
-            </div>
-          )}
 
           <form onSubmit={run} className="border border-line bg-panel">
             <div className="border-b border-line p-4">
@@ -355,15 +306,6 @@ export default function Home() {
               <a href={GITHUB_URL} className="border border-line px-4 py-2 font-mono text-xs text-muted transition-colors hover:border-ink hover:text-ink">
                 ★ star on GitHub
               </a>
-              {stats?.enabled && (
-                <button
-                  onClick={addToTally}
-                  disabled={contributed}
-                  className="border border-line px-4 py-2 font-mono text-xs text-muted transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
-                >
-                  {contributed ? '✓ added to the tally' : '+ add your grade to the tally (anonymous)'}
-                </button>
-              )}
             </div>
           </div>
         </section>
