@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import { scanSupabase } from '@/lib/scan/supabase';
-import { combineReport, type Report } from '@/lib/scan/report';
+import { combineReport, type Report, type ReportCategory } from '@/lib/scan/report';
 import type { Grade } from '@/lib/scan/types';
 import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
 import type { SecretsScanResult } from '@/lib/scan/secrets';
+import type { FundamentalsResult } from '@/lib/scan/fundamentals';
 
 const GITHUB_URL = 'https://github.com/FedericoTs/vibecheck';
 const X_URL = 'https://x.com/FedericoTs'; // TODO: set the real handle before launch
@@ -16,6 +17,34 @@ function tone(grade: Grade | null): string {
   if (grade === 'C') return 'text-warn border-warn/40';
   if (grade === 'D' || grade === 'F') return 'text-danger border-danger/50';
   return 'text-muted border-line';
+}
+
+function CategoryList({ categories }: { categories: ReportCategory[] }) {
+  return (
+    <div className="border border-line bg-panel divide-y divide-line">
+      {categories.map((c, i) => (
+        <div key={c.key} className="p-5">
+          <div className="flex items-center justify-between">
+            <p className="kicker">
+              {String(i + 1).padStart(2, '0')} — {c.label}
+            </p>
+            <span className={`border px-2 py-0.5 font-mono text-xs ${tone(c.grade)}`}>{c.grade ?? '—'}</span>
+          </div>
+          <p className="mt-2 text-sm text-muted">{c.summary}</p>
+          {c.findings.length > 0 && (
+            <ul className="mt-3 space-y-1.5 border-l border-danger/40 pl-3">
+              {c.findings.map((f, j) => (
+                <li key={j} className="font-mono text-xs text-ink/90">
+                  <span className="text-danger">✗ </span>
+                  {f}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function Home() {
@@ -50,14 +79,15 @@ export default function Home() {
     const headersP = appUrl.trim() ? postScan<HeadersScanResult>('/api/scan/headers') : Promise.resolve(null);
     const pathsP = appUrl.trim() ? postScan<PathsScanResult>('/api/scan/paths') : Promise.resolve(null);
     const secretsP = appUrl.trim() ? postScan<SecretsScanResult>('/api/scan/secrets') : Promise.resolve(null);
+    const fundamentalsP = appUrl.trim() ? postScan<FundamentalsResult>('/api/scan/fundamentals') : Promise.resolve(null);
     const sbP =
       sbUrl.trim() && anonKey.trim() ? scanSupabase({ url: sbUrl, anonKey }) : Promise.resolve(null);
     try {
-      const [hdr, paths, secrets, sb] = await Promise.all([headersP, pathsP, secretsP, sbP]);
-      if (appUrl.trim() && !hdr && !paths && !secrets) {
+      const [hdr, paths, secrets, fundamentals, sb] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, sbP]);
+      if (appUrl.trim() && !hdr && !paths && !secrets && !fundamentals) {
         setError('Could not reach that app URL — is it live and public?');
       }
-      setReport(combineReport(sb, hdr, paths, secrets));
+      setReport(combineReport({ supabase: sb, headers: hdr, paths, secrets, fundamentals }));
     } finally {
       setLoading(false);
     }
@@ -188,31 +218,9 @@ export default function Home() {
             </div>
           </div>
 
-          {/* categories */}
-          <div className="mt-4 border border-line bg-panel divide-y divide-line">
-            {report.categories.map((c, i) => (
-              <div key={c.key} className="p-5">
-                <div className="flex items-center justify-between">
-                  <p className="kicker">
-                    {String(i + 1).padStart(2, '0')} — {c.label}
-                  </p>
-                  <span className={`border px-2 py-0.5 font-mono text-xs ${tone(c.grade)}`}>
-                    {c.grade ?? '—'}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-muted">{c.summary}</p>
-                {c.findings.length > 0 && (
-                  <ul className="mt-3 space-y-1.5 border-l border-danger/40 pl-3">
-                    {c.findings.map((f, j) => (
-                      <li key={j} className="font-mono text-xs text-ink/90">
-                        <span className="text-danger">✗ </span>
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ))}
+          {/* security categories — the headline */}
+          <div className="mt-4">
+            <CategoryList categories={report.categories.filter((c) => c.group === 'security')} />
           </div>
 
           {error && <p className="mt-4 font-mono text-xs text-warn">{error}</p>}
@@ -227,6 +235,16 @@ export default function Home() {
               <code className="mt-3 block border border-line bg-canvas px-3 py-2 font-mono text-xs text-safe">
                 npx tenant-guard prove
               </code>
+            </div>
+          )}
+
+          {/* fundamentals / performance — secondary, its own grade, not part of the security headline */}
+          {report.categories.some((c) => c.group !== 'security') && (
+            <div className="mt-8">
+              <p className="kicker mb-3">
+                Fundamentals <span className="text-faint">· separate from the security grade</span>
+              </p>
+              <CategoryList categories={report.categories.filter((c) => c.group !== 'security')} />
             </div>
           )}
 

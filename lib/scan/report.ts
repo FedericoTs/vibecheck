@@ -2,10 +2,14 @@ import type { SupabaseScanResult, Grade } from './types';
 import type { HeadersScanResult } from './headers';
 import type { PathsScanResult } from './paths';
 import type { SecretsScanResult } from './secrets';
+import type { FundamentalsResult } from './fundamentals';
 import { worstGrade } from './grade';
 
+export type CategoryGroup = 'security' | 'basics' | 'performance';
+
 export interface ReportCategory {
-  key: 'supabase' | 'secrets' | 'paths' | 'headers';
+  key: string;
+  group: CategoryGroup;
   label: string;
   grade: Grade | null; // null = ran but errored (not counted toward the overall grade)
   summary: string;
@@ -13,10 +17,19 @@ export interface ReportCategory {
 }
 
 export interface Report {
+  /** The headline grade — SECURITY only. Basics/performance never drag it. */
   overallGrade: Grade;
   verdict: string;
-  issueCount: number;
+  issueCount: number; // security issues only
   categories: ReportCategory[];
+}
+
+export interface ReportInputs {
+  supabase?: SupabaseScanResult | null;
+  headers?: HeadersScanResult | null;
+  paths?: PathsScanResult | null;
+  secrets?: SecretsScanResult | null;
+  fundamentals?: FundamentalsResult | null;
 }
 
 const VERDICT: Record<Grade, string> = {
@@ -27,25 +40,22 @@ const VERDICT: Record<Grade, string> = {
   F: 'Wide open. Anyone can read your data or walk through the front door.',
 };
 
-/** Merge the scans into one report card. Only categories with a real grade count toward the overall. */
-export function combineReport(
-  sb: SupabaseScanResult | null,
-  hdr: HeadersScanResult | null,
-  paths: PathsScanResult | null = null,
-  secrets: SecretsScanResult | null = null,
-): Report {
+/** Merge the scans into one report card. The headline grade is security-only. */
+export function combineReport(inp: ReportInputs): Report {
   const categories: ReportCategory[] = [];
-  const graded: Grade[] = [];
+  const securityGrades: Grade[] = [];
   let issueCount = 0;
 
-  // Ordered most-severe first: data, secret keys, exposed files, headers.
+  // ── security (drives the headline grade), most-severe first ──────────
+  const sb = inp.supabase;
   if (sb) {
     if (sb.ok) {
       const exposed = sb.findings.filter((f) => f.exposed);
       issueCount += exposed.length;
-      graded.push(sb.grade);
+      securityGrades.push(sb.grade);
       categories.push({
         key: 'supabase',
+        group: 'security',
         label: 'Database exposure',
         grade: sb.grade,
         summary: sb.summary,
@@ -54,46 +64,34 @@ export function combineReport(
         ),
       });
     } else {
-      categories.push({ key: 'supabase', label: 'Database exposure', grade: null, summary: sb.error ?? 'Could not scan', findings: [] });
+      categories.push({ key: 'supabase', group: 'security', label: 'Database exposure', grade: null, summary: sb.error ?? 'Could not scan', findings: [] });
     }
   }
-
-  if (secrets) {
-    issueCount += secrets.findings.length;
-    graded.push(secrets.grade);
-    categories.push({
-      key: 'secrets',
-      label: 'Exposed secrets',
-      grade: secrets.grade,
-      summary: secrets.summary,
-      findings: secrets.findings.map((f) => `${f.label} — ${f.redacted}`),
-    });
+  if (inp.secrets) {
+    const s = inp.secrets;
+    issueCount += s.findings.length;
+    securityGrades.push(s.grade);
+    categories.push({ key: 'secrets', group: 'security', label: 'Exposed secrets', grade: s.grade, summary: s.summary, findings: s.findings.map((f) => `${f.label} — ${f.redacted}`) });
+  }
+  if (inp.paths) {
+    const p = inp.paths;
+    issueCount += p.exposed.length;
+    securityGrades.push(p.grade);
+    categories.push({ key: 'paths', group: 'security', label: 'Exposed files', grade: p.grade, summary: p.summary, findings: p.exposed.map((f) => `${f.label} — publicly served`) });
+  }
+  if (inp.headers) {
+    const h = inp.headers;
+    issueCount += h.missing.length;
+    securityGrades.push(h.grade);
+    categories.push({ key: 'headers', group: 'security', label: 'Security headers', grade: h.grade, summary: h.summary, findings: h.missing.map((c) => `${c.label} — ${c.fix}`) });
   }
 
-  if (paths) {
-    issueCount += paths.exposed.length;
-    graded.push(paths.grade);
-    categories.push({
-      key: 'paths',
-      label: 'Exposed files',
-      grade: paths.grade,
-      summary: paths.summary,
-      findings: paths.exposed.map((f) => `${f.label} — publicly served`),
-    });
+  // ── basics (secondary — its own grade, never drags security) ─────────
+  if (inp.fundamentals) {
+    const f = inp.fundamentals;
+    categories.push({ key: 'fundamentals', group: 'basics', label: 'Fundamentals', grade: f.grade, summary: f.summary, findings: f.failed.map((c) => `${c.label} — ${c.fix}`) });
   }
 
-  if (hdr) {
-    issueCount += hdr.missing.length;
-    graded.push(hdr.grade);
-    categories.push({
-      key: 'headers',
-      label: 'Security headers',
-      grade: hdr.grade,
-      summary: hdr.summary,
-      findings: hdr.missing.map((c) => `${c.label} — ${c.fix}`),
-    });
-  }
-
-  const overallGrade = worstGrade(graded);
+  const overallGrade = worstGrade(securityGrades);
   return { overallGrade, verdict: VERDICT[overallGrade], issueCount, categories };
 }

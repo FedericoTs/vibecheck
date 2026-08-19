@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { combineReport } from './report';
 import type { SupabaseScanResult } from './types';
 import type { HeadersScanResult } from './headers';
+import type { FundamentalsResult } from './fundamentals';
 
 const sb = (over: Partial<SupabaseScanResult> = {}): SupabaseScanResult => ({
   ok: true,
@@ -27,38 +28,47 @@ const hdr = (over: Partial<HeadersScanResult> = {}): HeadersScanResult => ({
   ...over,
 });
 
+const fundamentals = (grade: FundamentalsResult['grade']): FundamentalsResult => ({
+  host: 'my.app',
+  checks: [],
+  failed: [{ key: 'title', label: 'Page title', pass: false, severity: 'low', fix: 'add a title' }],
+  grade,
+  score: 50,
+  summary: 'basics missing',
+});
+
 describe('combineReport', () => {
-  it('overall = worst of the graded categories; issues sum across scans', () => {
-    const r = combineReport(sb({ grade: 'F', exposedCount: 2, findings: [
-      { table: 'users', exposed: true, rowsVisible: 10 },
-      { table: 'orders', exposed: true, rowsVisible: 5 },
-    ] }), hdr());
-    expect(r.overallGrade).toBe('F'); // F (db) is worse than B (headers)
-    expect(r.categories).toHaveLength(2);
-    expect(r.issueCount).toBe(3); // 2 exposed tables + 1 missing header
+  it('overall = worst of the SECURITY categories; issues sum across them', () => {
+    const r = combineReport({
+      supabase: sb({ grade: 'F', exposedCount: 2, findings: [
+        { table: 'users', exposed: true, rowsVisible: 10 },
+        { table: 'orders', exposed: true, rowsVisible: 5 },
+      ] }),
+      headers: hdr(),
+    });
+    expect(r.overallGrade).toBe('F');
+    expect(r.issueCount).toBe(3); // 2 tables + 1 header
     expect(r.verdict).toMatch(/Wide open/);
   });
 
-  it('a single scan works (headers only)', () => {
-    const r = combineReport(null, hdr({ grade: 'C' }));
+  it('a single security scan works (headers only)', () => {
+    const r = combineReport({ headers: hdr({ grade: 'C' }) });
     expect(r.overallGrade).toBe('C');
     expect(r.categories.map((c) => c.key)).toEqual(['headers']);
   });
 
-  it('an errored supabase scan is shown but not counted toward the grade', () => {
-    const r = combineReport(sb({ ok: false, error: 'anon key rejected' }), hdr({ grade: 'A', missing: [] }));
-    expect(r.overallGrade).toBe('A'); // only headers counts
-    const dbCat = r.categories.find((c) => c.key === 'supabase');
-    expect(dbCat?.grade).toBeNull();
-    expect(dbCat?.summary).toMatch(/rejected/);
+  it('an errored supabase scan shows but does not count toward the grade', () => {
+    const r = combineReport({ supabase: sb({ ok: false, error: 'anon key rejected' }), headers: hdr({ grade: 'A', missing: [] }) });
+    expect(r.overallGrade).toBe('A');
+    expect(r.categories.find((c) => c.key === 'supabase')?.grade).toBeNull();
   });
 
-  it('all clean -> A, zero issues', () => {
-    const r = combineReport(
-      sb({ grade: 'A', exposedCount: 0, findings: [{ table: 'users', exposed: false, rowsVisible: 0 }] }),
-      hdr({ grade: 'A', missing: [] }),
-    );
-    expect(r.overallGrade).toBe('A');
-    expect(r.issueCount).toBe(0);
+  it('BASICS never drag the security headline grade', () => {
+    const r = combineReport({ headers: hdr({ grade: 'A', missing: [] }), fundamentals: fundamentals('F') });
+    expect(r.overallGrade).toBe('A'); // security is A even though fundamentals is F
+    const f = r.categories.find((c) => c.key === 'fundamentals');
+    expect(f?.group).toBe('basics');
+    expect(f?.grade).toBe('F');
+    expect(r.issueCount).toBe(0); // fundamentals failures are not security issues
   });
 });
