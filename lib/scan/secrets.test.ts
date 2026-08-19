@@ -25,6 +25,13 @@ describe('findSecrets — precision (false positives are unacceptable)', () => {
     expect(findSecrets(jwt({ role: 'anon', iss: 'supabase' })).map((f) => f.id)).not.toContain('supabase-service-role');
   });
 
+  it("flags Supabase's CURRENT secret key format, never the publishable one", () => {
+    const secret = 'sb_secret_' + 'A'.repeat(30);
+    const publishable = 'sb_publishable_' + 'B'.repeat(30);
+    const ids = findSecrets(`${secret} ${publishable}`).map((f) => f.id);
+    expect(ids).toEqual(['supabase-secret']); // publishable is public by design
+  });
+
   it('flags a Stripe SECRET key, not the publishable key', () => {
     const secret = 'sk_live_51H0' + 'a'.repeat(24);
     const publishable = 'pk_live_51H0' + 'b'.repeat(24);

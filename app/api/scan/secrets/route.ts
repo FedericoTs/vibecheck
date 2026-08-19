@@ -79,12 +79,35 @@ export async function POST(request: Request): Promise<Response> {
   const bundles = await Promise.all(scripts.map(fetchText));
   for (const b of bundles) all.push(...findSecrets(b));
 
-  // Locate the Supabase project the app already exposes publicly, so the browser
-  // can run the database check without the user pasting anything. We only find
-  // it here — the table probes still run client-side.
-  const allCode = [html, ...bundles].join('\n');
-  const discovered = discoverSupabase(allCode);
-  const firebase = discoverFirebase(allCode);
+  // Locate the backend the app already exposes publicly, so the browser can run
+  // the database check without the user pasting anything. We only find it here —
+  // the probes themselves still run client-side.
+  let allCode = [html, ...bundles].join('\n');
+  let discovered = discoverSupabase(allCode);
+  let firebase = discoverFirebase(allCode);
+
+  // Many apps have a static marketing homepage and load their backend client
+  // only on the app routes, so the landing page alone yields nothing. Fall back
+  // to the usual entry points before giving up.
+  if (!discovered && !firebase) {
+    for (const entry of ['/login', '/dashboard', '/app', '/signin']) {
+      try {
+        const entryHtml = await fetchText(new URL(entry, finalUrl).toString());
+        if (!entryHtml) continue;
+        const entryScripts = sameOriginScripts(entryHtml, finalUrl).filter((s) => !scripts.includes(s));
+        const entryBundles = await Promise.all(entryScripts.slice(0, 12).map(fetchText));
+        const entryCode = [entryHtml, ...entryBundles].join('\n');
+        discovered = discoverSupabase(entryCode);
+        firebase = discoverFirebase(entryCode);
+        if (discovered || firebase) {
+          allCode += '\n' + entryCode;
+          break;
+        }
+      } catch {
+        /* entry route unavailable — try the next */
+      }
+    }
+  }
   const firebaseCollections = firebase ? extractCollections(allCode) : [];
 
   // Are the source maps published? A .js.map republishes the original source —

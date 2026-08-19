@@ -52,4 +52,19 @@ describe('discoverSupabase', () => {
     const d = discoverSupabase(`https://abcdefghijkl.supabase.co ${SERVICE}`);
     expect(d).toBe(null); // no anon key -> nothing to probe with
   });
+
+  it('REGRESSION: supports the CURRENT sb_publishable_ key format, not just legacy JWTs', () => {
+    // Found by scanning a real production app: Supabase replaced the legacy
+    // `role: anon` JWT with `sb_publishable_…`, so JWT-only discovery silently
+    // missed every modern project — including the flagship database check.
+    const modern = 'const u="https://abcdefghijkl.supabase.co",k="sb_publishable_' + 'A'.repeat(30) + '";';
+    const d = discoverSupabase(modern);
+    expect(d?.url).toBe('https://abcdefghijkl.supabase.co');
+    expect(d?.anonKey).toMatch(/^sb_publishable_/);
+  });
+
+  it('never returns the privileged sb_secret_ key to probe with', () => {
+    const withSecret = 'https://abcdefghijkl.supabase.co "sb_secret_' + 'B'.repeat(30) + '"';
+    expect(discoverSupabase(withSecret)).toBe(null);
+  });
 });

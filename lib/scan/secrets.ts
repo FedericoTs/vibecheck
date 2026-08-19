@@ -57,6 +57,9 @@ interface SecretRule {
 }
 
 const RULES: SecretRule[] = [
+  // Supabase's current privileged key format (the service_role successor).
+  // `sb_publishable_…` is deliberately absent — that one is meant to be public.
+  { id: 'supabase-secret', label: 'Supabase secret key (bypasses all RLS)', severity: 'high', regex: /\bsb_secret_[A-Za-z0-9_-]{16,}/g },
   { id: 'stripe-secret', label: 'Stripe secret key', severity: 'high', regex: /\b[sr]k_live_[A-Za-z0-9]{20,}/g },
   { id: 'aws-key', label: 'AWS access key id', severity: 'high', regex: /\bAKIA[0-9A-Z]{16}\b/g },
   { id: 'github-token', label: 'GitHub token', severity: 'high', regex: /\b(?:ghp|gho|ghs|ghr)_[A-Za-z0-9]{36}\b/g },

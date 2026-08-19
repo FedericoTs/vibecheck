@@ -161,7 +161,7 @@ export async function scanSupabase(opts: ScanOpts): Promise<SupabaseScanResult> 
       return blank(
         host,
         res.status === 401
-          ? 'The anon key was rejected — double-check you pasted the anon (public) key'
+          ? 'The project rejected its public key, so the database could not be checked. That often means the key was rotated (your deployed bundle is stale) or the API is restricted — either way nothing here is a finding.'
           : `Could not reach the project (HTTP ${res.status})`,
       );
     }

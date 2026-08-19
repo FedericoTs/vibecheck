@@ -20,6 +20,10 @@ export interface DiscoveredSupabase {
 
 const PROJECT_URL = /https?:\/\/([a-z0-9]{8,})\.supabase\.(?:co|in)/gi;
 const JWT = /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g;
+// Supabase's current key format, which replaced the legacy `role: anon` JWT.
+// `sb_publishable_…` is the public client key; `sb_secret_…` is the privileged
+// one and must NEVER be used to probe (it is a secrets-scan finding instead).
+const PUBLISHABLE = /\bsb_publishable_[A-Za-z0-9_-]{16,}/g;
 
 /** Supabase project URLs referenced in a blob of client code. */
 export function findSupabaseUrls(text: string): string[] {
@@ -35,6 +39,8 @@ export function findSupabaseUrls(text: string): string[] {
  */
 export function findAnonKeys(text: string): string[] {
   const out = new Set<string>();
+  // Current format first — new projects ship these instead of a JWT.
+  for (const m of text.matchAll(PUBLISHABLE)) out.add(m[0]);
   for (const m of text.matchAll(JWT)) {
     if (jwtRole(m[0]) === 'anon') out.add(m[0]);
   }

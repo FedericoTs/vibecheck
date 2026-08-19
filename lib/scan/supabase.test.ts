@@ -109,7 +109,10 @@ describe('scanSupabase', () => {
     const fetchy = mockFetch([['/rest/v1/', () => res({ message: 'invalid' }, { status: 401 })]]);
     const r = await scanSupabase({ url: 'abc.supabase.co', anonKey: 'bad', fetch: fetchy });
     expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/anon/i);
+    // The key is usually auto-detected, so the message must not tell the user to
+    // re-check something they never typed, and must not read as a finding.
+    expect(r.error).toMatch(/rejected its public key/i);
+    expect(r.error).toMatch(/nothing here is a finding/i);
   });
 
   it('missing inputs fail with guidance, not a crash', async () => {
