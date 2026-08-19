@@ -1,26 +1,62 @@
 @import "tailwindcss";
 
+/* ── vibecheck design tokens ──────────────────────────────────────────
+   A committed dark, editorial security-terminal palette. One neutral ink,
+   thin lines, and three semantic signal colours the grade drives. */
+@theme {
+  --color-canvas: #0b0b0d;
+  --color-panel: #0f0f12;
+  --color-line: #212127;
+  --color-line-soft: #17171b;
+  --color-ink: #ededf0;
+  --color-muted: #8b8b95;
+  --color-faint: #5a5a63;
+  --color-safe: #48c98b;
+  --color-warn: #e6b25e;
+  --color-danger: #f2565b;
+
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", monospace;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  -webkit-font-smoothing: antialiased;
+  /* faint grid, the only "texture" — signals a tool, not a landing page */
+  background-image:
+    linear-gradient(var(--color-line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-line-soft) 1px, transparent 1px);
+  background-size: 44px 44px;
+  background-position: center top;
+}
+
+::selection {
+  background: var(--color-danger);
+  color: #0b0b0d;
+}
+
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.cursor {
+  display: inline-block;
+  width: 0.6ch;
+  background: currentColor;
+  animation: blink 1.1s steps(1) infinite;
+}
+
+/* mono micro-label */
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-faint);
 }
