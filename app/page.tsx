@@ -72,6 +72,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [fixCopied, setFixCopied] = useState(false);
+  const [badgeCopied, setBadgeCopied] = useState(false);
   const [autoDetected, setAutoDetected] = useState(false);
   const report = useMemo(() => (inputs ? combineReport(inputs) : null), [inputs]);
 
@@ -173,6 +174,16 @@ export default function Home() {
     navigator.clipboard?.writeText(buildFixPrompt(report, appUrl.trim() || undefined)).then(() => {
       setFixCopied(true);
       setTimeout(() => setFixCopied(false), 2400);
+    });
+  }
+
+  function copyBadge() {
+    if (!report) return;
+    const origin = window.location.origin;
+    const md = `[![vibecheck security: ${report.overallGrade}](${origin}/badge?g=${report.overallGrade})](${origin})`;
+    navigator.clipboard?.writeText(md).then(() => {
+      setBadgeCopied(true);
+      setTimeout(() => setBadgeCopied(false), 2400);
     });
   }
 
@@ -350,6 +361,26 @@ export default function Home() {
                     </p>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* earn-it badge: only offered on a clean security result */}
+          {report.issueCount === 0 && (
+            <div className="mt-8 border border-safe/30 bg-panel p-5">
+              <p className="kicker mb-2 text-safe">Clean scan — show it off</p>
+              <p className="text-sm text-muted">
+                Add this to your README or footer. It links back here so anyone can run their own scan.
+              </p>
+              <div className="mt-3 flex items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={`/badge?g=${report.overallGrade}`} alt={`vibecheck security: ${report.overallGrade}`} width={126} height={20} />
+                <button
+                  onClick={copyBadge}
+                  className="border border-line px-3 py-1.5 font-mono text-xs text-muted transition-colors hover:border-ink hover:text-ink"
+                >
+                  {badgeCopied ? '✓ markdown copied' : 'copy markdown'}
+                </button>
               </div>
             </div>
           )}
