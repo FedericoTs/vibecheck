@@ -28,7 +28,7 @@ export default function LeakyDemo() {
   // discovery + client-side probe path is exercised end to end on a page we own
   // rather than against somebody else's misconfigured database.
   const fakeFirebase = `const firebaseConfig = {
-  apiKey: "AIza${'S'.repeat(4)}vibecheckDemoNotARealKey00000",
+  apiKey: "${'AIza' + 'SyDEMO' + 'vibecheckFixtureNotARealKey00'}",
   authDomain: "vibecheck-demo-fixture.firebaseapp.com",
   projectId: "vibecheck-demo-fixture",
   storageBucket: "vibecheck-demo-fixture.appspot.com"
