@@ -50,6 +50,18 @@ export function parseCountHeader(contentRange: string | null): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
+/**
+ * Field names from a returned row. Names are schema, not data — they make the
+ * finding actionable ("your users table exposes email, phone") while no value
+ * ever leaves the browser or reaches a report.
+ */
+export function columnNames(body: unknown): string[] | undefined {
+  if (!Array.isArray(body) || body.length === 0) return undefined;
+  const first = body[0];
+  if (!first || typeof first !== 'object') return undefined;
+  return Object.keys(first as Record<string, unknown>).slice(0, 24);
+}
+
 /** Exposure verdict: the anon role actually returned at least one row. */
 export function isExposed(status: number, body: unknown): boolean {
   return status === 200 && Array.isArray(body) && body.length >= 1;
@@ -146,6 +158,10 @@ export async function probeTable(
       table,
       exposed,
       rowsVisible: exposed ? parseCountHeader(res.headers.get('content-range')) : 0,
+      // Column NAMES only. We already had to fetch a row to prove readability;
+      // naming the fields makes the finding concrete ("email, phone,
+      // stripe_customer_id") without ever surfacing a single value.
+      columns: exposed ? columnNames(body) : undefined,
     };
   } catch (e) {
     return { table, exposed: false, rowsVisible: null, error: (e as Error).message };

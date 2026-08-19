@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gradeHeaders, lowerHeaders } from './headers';
+import { gradeHeaders, lowerHeaders, cspIsMeaningful } from './headers';
 
 const FULL = {
   'Content-Security-Policy': "default-src 'self'",
@@ -46,5 +46,42 @@ describe('gradeHeaders', () => {
     const r = gradeHeaders(rest);
     expect(r.score).toBe(88); // 100 - 12
     expect(r.grade).toBe('B');
+  });
+});
+
+describe('cspIsMeaningful — a CSP that permits what it exists to stop', () => {
+  it('rejects unsafe-inline / unsafe-eval in the script directive', () => {
+    expect(cspIsMeaningful("default-src 'self'; script-src 'self' 'unsafe-inline'")).toBe(false);
+    expect(cspIsMeaningful("script-src 'self' 'unsafe-eval'")).toBe(false);
+  });
+  it('rejects a wildcard or blanket https: script source', () => {
+    expect(cspIsMeaningful('script-src *')).toBe(false);
+    expect(cspIsMeaningful("script-src 'self' https:")).toBe(false);
+  });
+  it('accepts a genuinely restrictive policy', () => {
+    expect(cspIsMeaningful("default-src 'self'")).toBe(true);
+    expect(cspIsMeaningful("script-src 'self' 'nonce-abc123'")).toBe(true);
+  });
+  it('does NOT punish style-src unsafe-inline, which is common and far less serious', () => {
+    expect(cspIsMeaningful("script-src 'self'; style-src 'self' 'unsafe-inline'")).toBe(true);
+  });
+  it('an empty or absent policy is not meaningful', () => {
+    expect(cspIsMeaningful('')).toBe(false);
+    expect(cspIsMeaningful(undefined)).toBe(false);
+  });
+});
+
+describe('CSP effectiveness in the graded checks', () => {
+  const get = (h: Record<string, string>, key: string) => gradeHeaders(h).checks.find((c) => c.key === key)!;
+
+  it('a weak CSP is present but NOT effective', () => {
+    const h = { 'content-security-policy': "script-src 'self' 'unsafe-inline'" };
+    expect(get(h, 'content-security-policy').present).toBe(true);
+    expect(get(h, 'csp-effective').present).toBe(false);
+  });
+
+  it('no CSP at all fails the presence check without double-penalising effectiveness', () => {
+    expect(get({}, 'content-security-policy').present).toBe(false);
+    expect(get({}, 'csp-effective').present).toBe(true);
   });
 });

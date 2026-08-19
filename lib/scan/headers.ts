@@ -40,6 +40,26 @@ export function lowerHeaders(h: Record<string, string>): Record<string, string> 
  * Do the cookies set on this response carry Secure + HttpOnly? Vacuously true
  * when the response sets no cookies at all — there is nothing to protect.
  */
+/**
+ * Is this CSP actually doing anything? A policy containing 'unsafe-inline' or
+ * 'unsafe-eval' for scripts, or script-src *, permits precisely the injection a
+ * CSP exists to stop — so reporting it as "present" would hand the user a false
+ * sense of security. Style-src unsafe-inline is common and far less serious, so
+ * it is deliberately not counted.
+ */
+export function cspIsMeaningful(csp: string | undefined): boolean {
+  const v = (csp ?? '').trim();
+  if (!v) return false;
+  const scriptDirective =
+    v.match(/(?:^|;)\s*script-src(?:-elem)?\s([^;]*)/i)?.[1] ??
+    v.match(/(?:^|;)\s*default-src\s([^;]*)/i)?.[1] ??
+    '';
+  if (!scriptDirective) return false;
+  if (/'unsafe-inline'|'unsafe-eval'/i.test(scriptDirective)) return false;
+  if (/(^|\s)\*(\s|$)|https?:(\s|$)/i.test(scriptDirective)) return false;
+  return true;
+}
+
 export function cookiesLookSafe(setCookie: string | undefined): boolean {
   const raw = (setCookie ?? '').trim();
   if (!raw) return true;
@@ -101,6 +121,15 @@ export function gradeHeaders(rawHeaders: Record<string, string>, host = ''): Hea
         ? `Reveals your stack (${h['x-powered-by']}) to attackers.`
         : 'Does not advertise the server stack.',
       fix: 'Remove the X-Powered-By header.',
+    },
+    {
+      key: 'csp-effective',
+      label: 'Content-Security-Policy actually restricts scripts',
+      // Only meaningful once a CSP exists; without one the CSP check already fails.
+      present: !h['content-security-policy'] ? true : cspIsMeaningful(h['content-security-policy']),
+      severity: 'medium',
+      note: "A CSP containing 'unsafe-inline' or 'unsafe-eval' permits the injection it exists to prevent.",
+      fix: "Remove 'unsafe-inline' and 'unsafe-eval' from script-src; use nonces or hashes for any inline script.",
     },
     {
       key: 'cors',

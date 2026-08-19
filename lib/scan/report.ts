@@ -80,6 +80,18 @@ export interface ReportInputs {
   visibility?: VisibilityResult | null;
 }
 
+/** Column names that usually mean personal or payment data. */
+const SENSITIVE_COLUMN = /^(email|phone|tel|mobile|address|street|postcode|zip|dob|birth|ssn|nino|tax|iban|card|stripe|customer_id|password|hash|token|secret|api_key|salary|latitude|longitude|ip_address)/i;
+
+/** A short, human list of the exposed fields, leading with the sensitive ones. */
+export function describeColumns(columns: string[]): string {
+  const sensitive = columns.filter((c) => SENSITIVE_COLUMN.test(c));
+  const shown = [...sensitive, ...columns.filter((c) => !sensitive.includes(c))].slice(0, 5);
+  const more = columns.length - shown.length;
+  const list = shown.join(', ') + (more > 0 ? ` +${more} more` : '');
+  return sensitive.length > 0 ? `${list} (personal data)` : list;
+}
+
 const VERDICT: Record<Grade, string> = {
   A: 'Locked down. Nothing a stranger can reach.',
   B: 'Solid — a couple of gaps worth closing.',
@@ -106,7 +118,8 @@ export function combineReport(inp: ReportInputs): Report {
             label: f.table,
             pass: !f.exposed,
             detail: f.exposed
-              ? `${f.rowsVisible != null ? `${f.rowsVisible.toLocaleString()} rows` : 'rows'} readable by anyone`
+              ? `${f.rowsVisible != null ? `${f.rowsVisible.toLocaleString()} rows` : 'rows'} readable by anyone` +
+                (f.columns?.length ? ` — exposes ${describeColumns(f.columns)}` : '')
               : 'not readable by the anon key',
             severity: 'critical' as const,
           }))

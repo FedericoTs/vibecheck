@@ -3,6 +3,8 @@
 export type Fetchy = (input: string, init?: RequestInit) => Promise<Response>;
 
 export interface TableFinding {
+  /** Column names visible to anonymous readers. NAMES ONLY — never any values. */
+  columns?: string[];
   table: string;
   /** true = the anon key literally read a row from this table (a public-read leak). */
   exposed: boolean;

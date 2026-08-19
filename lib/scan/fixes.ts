@@ -84,8 +84,26 @@ const LABEL_FIX: Array<[RegExp, string]> = [
   [/open graph|og:/i, 'Add Open Graph tags (og:title, og:description, og:image) so shared links render a preview card.'],
 ];
 
+/** A table name looks like a bare identifier; a check label like "Storage buckets" does not. */
+const TABLE_NAME = /^[a-z_][a-z0-9_]*$/i;
+
 /** The fix text for one failing check. */
 export function fixFor(categoryKey: string, check: CheckItem): string {
+  // For an exposed table, emit SQL naming the ACTUAL table: a template with
+  // <t> in it is one more thing for the user to get wrong.
+  if (categoryKey === 'supabase' && TABLE_NAME.test(check.label)) {
+    const t = check.label;
+    return (
+      `Enable Row Level Security on this table and scope every row to its owner:
+` +
+      `  alter table ${t} enable row level security;
+` +
+      `  create policy "own rows" on ${t} for select using (auth.uid() = user_id);
+` +
+      `RLS is per-command, so add matching policies for insert/update/delete too — ` +
+      `a correct select policy still leaves writes open.`
+    );
+  }
   for (const [re, text] of LABEL_FIX) {
     if (re.test(check.label)) return text;
   }
