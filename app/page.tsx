@@ -209,8 +209,8 @@ export default function Home() {
 
           {error && <p className="mt-4 font-mono text-xs text-warn">{error}</p>}
 
-          {/* tenant-guard funnel */}
-          {report.issueCount > 0 && (
+          {/* tenant-guard funnel — only when there's an actual database exposure (its remit) */}
+          {report.categories.some((c) => c.key === 'supabase' && c.findings.length > 0) && (
             <div className="mt-4 border border-line bg-panel p-5">
               <p className="kicker mb-2">Stop it shipping again</p>
               <p className="text-sm text-muted">
