@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { combineReport } from './report';
+import { combineReport, severityCounts } from './report';
+import type { Report, ReportCategory, CheckItem } from './report';
 import type { SupabaseScanResult } from './types';
 import type { HeadersScanResult } from './headers';
 import type { FundamentalsResult } from './fundamentals';
@@ -98,5 +99,59 @@ describe('combineReport', () => {
     const paths = r.categories.find((c) => c.key === 'paths')!;
     expect(paths.checks[0].pass).toBe(true); // the .env probe shows as passed
     expect(r.passed).toBe(2);
+  });
+});
+
+// local builders so these tests don't depend on the scanners' shapes
+const cat = (over: Partial<ReportCategory>): ReportCategory => ({
+  key: 'headers',
+  group: 'security',
+  label: 'Security headers',
+  grade: 'F',
+  summary: '',
+  checks: [],
+  ...over,
+});
+const report = (categories: ReportCategory[]): Report => {
+  const all: CheckItem[] = categories.flatMap((c) => c.checks);
+  return {
+    overallGrade: 'F',
+    verdict: '',
+    issueCount: all.filter((c) => !c.pass).length,
+    passed: all.filter((c) => c.pass).length,
+    total: all.length,
+    categories,
+  };
+};
+
+describe('severityCounts', () => {
+  const withChecks = (checks: Array<{ pass: boolean; severity?: 'critical' | 'high' | 'medium' | 'low' }>) =>
+    report([cat({ checks: checks.map((c, i) => ({ label: 'c' + i, pass: c.pass, severity: c.severity })) })]);
+
+  it('counts only FAILING security checks, grouped by severity', () => {
+    const r = withChecks([
+      { pass: false, severity: 'critical' },
+      { pass: false, severity: 'critical' },
+      { pass: false, severity: 'high' },
+      { pass: false, severity: 'low' },
+      { pass: true, severity: 'critical' }, // passing -> ignored
+    ]);
+    expect(severityCounts(r)).toEqual({ critical: 2, high: 1, medium: 0, low: 1 });
+  });
+
+  it('defaults an unlabelled failure to medium rather than dropping it', () => {
+    expect(severityCounts(withChecks([{ pass: false }]))).toEqual({ critical: 0, high: 0, medium: 1, low: 0 });
+  });
+
+  it('ignores non-security groups — privacy and SEO are not security issues', () => {
+    const r = report([
+      cat({ checks: [{ label: 'a', pass: false, severity: 'critical' }] }),
+      cat({ key: 'privacy', group: 'privacy', label: 'EU privacy', checks: [{ label: 'b', pass: false, severity: 'critical' }] }),
+    ]);
+    expect(severityCounts(r).critical).toBe(1);
+  });
+
+  it('a clean report has nothing to weight', () => {
+    expect(severityCounts(withChecks([{ pass: true }]))).toEqual({ critical: 0, high: 0, medium: 0, low: 0 });
   });
 });

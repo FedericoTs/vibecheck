@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { scanSupabase } from '@/lib/scan/supabase';
 import { scanFirebase, type FirebaseConfig } from '@/lib/scan/firebase';
-import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
+import { combineReport, severityCounts, SEVERITY_ORDER, type ReportInputs, type ReportCategory, type CheckItem, type Report, type Severity } from '@/lib/scan/report';
 import { buildFixPrompt, fixFor } from '@/lib/scan/fixes';
 import type { Grade } from '@/lib/scan/types';
 import type { HeadersScanResult } from '@/lib/scan/headers';
@@ -43,6 +43,61 @@ function tone(grade: Grade | null): string {
   if (grade === 'C') return 'text-warn border-warn/40';
   if (grade === 'D' || grade === 'F') return 'text-danger border-danger/50';
   return 'text-muted border-line';
+}
+
+const SEVERITY_STYLE: Record<Severity, { bar: string; text: string; label: string }> = {
+  critical: { bar: 'bg-danger', text: 'text-danger', label: 'critical' },
+  high: { bar: 'bg-danger/60', text: 'text-danger/80', label: 'high' },
+  medium: { bar: 'bg-warn', text: 'text-warn', label: 'medium' },
+  low: { bar: 'bg-muted/50', text: 'text-muted', label: 'low' },
+};
+
+/**
+ * Issues weighted by severity. Nine findings is not nine equal problems — one
+ * anonymously-readable users table outweighs a missing Referrer-Policy, and a
+ * flat count hides exactly that. Widths are proportional to the real counts.
+ */
+function SeverityBreakdown({ report }: { report: Report }) {
+  const counts = severityCounts(report);
+  const total = SEVERITY_ORDER.reduce((n, k) => n + counts[k], 0);
+  if (total === 0) return null;
+  const present = SEVERITY_ORDER.filter((k) => counts[k] > 0);
+
+  return (
+    <div className="border border-line bg-panel p-4">
+      <div className="mb-3 flex items-baseline justify-between">
+        <p className="kicker">Issues by severity</p>
+        <p className="font-mono text-xs text-faint">{total} total</p>
+      </div>
+      <div className="flex h-2.5 w-full overflow-hidden bg-line">
+        {present.map((k) => (
+          <div
+            key={k}
+            className={SEVERITY_STYLE[k].bar}
+            style={{ width: `${(counts[k] / total) * 100}%` }}
+            title={`${counts[k]} ${SEVERITY_STYLE[k].label}`}
+          />
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
+        {present.map((k) => (
+          <div key={k} className="flex items-center gap-2">
+            <span className={`inline-block h-2 w-2 shrink-0 ${SEVERITY_STYLE[k].bar}`} />
+            <span className="font-mono text-xs">
+              <span className={`font-semibold ${SEVERITY_STYLE[k].text}`}>{counts[k]}</span>{' '}
+              <span className="text-muted">{SEVERITY_STYLE[k].label}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+      {counts.critical > 0 && (
+        <p className="mt-3 text-xs leading-relaxed text-faint">
+          Start with the {counts.critical} critical {counts.critical === 1 ? 'issue' : 'issues'} — those are
+          the ones a stranger can act on right now.
+        </p>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -539,6 +594,12 @@ export default function Home() {
           <div className="mt-3">
             <GradeGrid categories={report.categories} />
           </div>
+
+          {report.issueCount > 0 && (
+            <div className="mt-3">
+              <SeverityBreakdown report={report} />
+            </div>
+          )}
 
           {/* security categories — the headline */}
           <div className="mt-6">

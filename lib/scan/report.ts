@@ -16,10 +16,33 @@ import { worstGrade } from './grade';
 export type CategoryGroup = 'security' | 'privacy' | 'visibility' | 'basics' | 'performance';
 
 /** One thing the tool checked, and whether it passed. Shown as a ✓/✗ line. */
+export type Severity = 'critical' | 'high' | 'medium' | 'low';
+
 export interface CheckItem {
   label: string;
   pass: boolean;
   detail?: string;
+  /** Only meaningful on a FAILING check — how much it actually matters. */
+  severity?: Severity;
+}
+
+export const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low'];
+
+/**
+ * Failing SECURITY checks grouped by severity. Nine issues is not nine equal
+ * problems: one readable users table outweighs a missing Referrer-Policy, and a
+ * flat count hides that.
+ */
+export function severityCounts(report: Report): Record<Severity, number> {
+  const out: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+  for (const c of report.categories) {
+    if (c.group !== 'security') continue;
+    for (const check of c.checks) {
+      if (check.pass) continue;
+      out[check.severity ?? 'medium'] += 1;
+    }
+  }
+  return out;
 }
 
 export interface ReportCategory {
@@ -85,6 +108,7 @@ export function combineReport(inp: ReportInputs): Report {
             detail: f.exposed
               ? `${f.rowsVisible != null ? `${f.rowsVisible.toLocaleString()} rows` : 'rows'} readable by anyone`
               : 'not readable by the anon key',
+            severity: 'critical' as const,
           }))
         : [{ label: 'No tables reachable to test', pass: true }];
 
@@ -100,6 +124,7 @@ export function combineReport(inp: ReportInputs): Report {
               ? `anyone can list your buckets — ${b.publicBuckets.length} public: ${b.publicBuckets.slice(0, 3).join(', ')}`
               : 'anyone can enumerate your storage buckets'
             : 'not enumerable by anonymous visitors',
+          severity: 'high',
         });
       }
 
@@ -113,6 +138,7 @@ export function combineReport(inp: ReportInputs): Report {
             n === 0
               ? 'none exposed on the public API'
               : `${n} callable by anyone: ${sb.rpc.exposed.slice(0, 4).join(', ')}${n > 4 ? '…' : ''}`,
+          severity: 'medium',
         });
       }
       // Auth configuration: only the dangerous COMBINATION is a failure.
@@ -128,6 +154,7 @@ export function combineReport(inp: ReportInputs): Report {
             : a.autoConfirm
               ? 'auto-confirm is on, but signups are closed'
               : 'new accounts must confirm their email',
+          severity: 'high',
         });
       }
       categories.push({ key: 'supabase', group: 'security', label: 'Database exposure', grade: sb.grade, summary: sb.summary, checks });
@@ -145,6 +172,7 @@ export function combineReport(inp: ReportInputs): Report {
         label: 'Realtime Database locked down',
         pass: !f.rtdbOpen,
         detail: f.rtdbOpen ? 'the entire database is readable by anyone' : 'not readable by anonymous visitors',
+        severity: 'critical',
       });
     }
     for (const c of f.collections) {
@@ -152,6 +180,7 @@ export function combineReport(inp: ReportInputs): Report {
         label: `${c.collection} (Firestore)`,
         pass: !c.exposed,
         detail: c.exposed ? 'documents readable by anyone' : 'not readable by anonymous visitors',
+        severity: 'critical',
       });
     }
     categories.push({ key: 'firebase', group: 'security', label: 'Firebase exposure', grade: f.grade, summary: f.summary, checks });
@@ -162,7 +191,7 @@ export function combineReport(inp: ReportInputs): Report {
     issueCount += s.findings.length;
     securityGrades.push(s.grade);
     const checks: CheckItem[] = s.findings.length
-      ? s.findings.map((f) => ({ label: f.label, pass: false, detail: f.redacted }))
+      ? s.findings.map((f) => ({ label: f.label, pass: false, detail: f.redacted, severity: f.severity === 'high' ? ('critical' as const) : f.severity }))
       : [
           {
             label: 'No secret keys in the client bundle',
@@ -189,6 +218,7 @@ export function combineReport(inp: ReportInputs): Report {
           n === 0
             ? 'your original source is not downloadable'
             : `${n} .map file(s) served — anyone can read your original source: ${s.sourceMaps.exposed.slice(0, 2).join(', ')}`,
+        severity: 'medium',
       });
     }
     categories.push({ key: 'secrets', group: 'security', label: 'Exposed secrets', grade: s.grade, summary: s.summary, checks });
@@ -204,6 +234,7 @@ export function combineReport(inp: ReportInputs): Report {
           label: f.label,
           pass: f.verdict !== 'exposed',
           detail: f.verdict === 'inconclusive' ? `couldn't be determined — ${f.detail}` : f.detail,
+          severity: 'high' as const,
         }))
       : [{ label: 'No exposed AI or MCP endpoints', pass: true, detail: `${a.findings.length} common AI endpoints checked` }];
     categories.push({ key: 'ai', group: 'security', label: 'AI & MCP endpoints', grade: a.grade, summary: a.summary, checks });
@@ -221,6 +252,7 @@ export function combineReport(inp: ReportInputs): Report {
           label: f.label,
           pass: f.verdict !== 'exposed',
           detail: f.verdict === 'inconclusive' ? `couldn't be determined — ${f.detail}` : f.detail,
+          severity: f.kind === 'data' ? ('critical' as const) : f.kind === 'admin' ? ('high' as const) : ('medium' as const),
         }))
       : [{ label: 'No admin or debug routes reachable', pass: true, detail: `${r.findings.length} common paths checked` }];
     categories.push({ key: 'routes', group: 'security', label: 'Admin & debug routes', grade: r.grade, summary: r.summary, checks });
@@ -230,14 +262,14 @@ export function combineReport(inp: ReportInputs): Report {
     const p = inp.paths;
     issueCount += p.exposed.length;
     securityGrades.push(p.grade);
-    const checks: CheckItem[] = p.findings.map((f) => ({ label: f.label, pass: !f.exposed, detail: f.exposed ? 'publicly served' : undefined }));
+    const checks: CheckItem[] = p.findings.map((f) => ({ label: f.label, pass: !f.exposed, detail: f.exposed ? 'publicly served' : undefined, severity: f.severity }));
     categories.push({ key: 'paths', group: 'security', label: 'Exposed files', grade: p.grade, summary: p.summary, checks });
   }
   if (inp.headers) {
     const h = inp.headers;
     issueCount += h.missing.length;
     securityGrades.push(h.grade);
-    const checks: CheckItem[] = h.checks.map((c) => ({ label: c.label, pass: c.present, detail: c.present ? undefined : 'not set on your responses' }));
+    const checks: CheckItem[] = h.checks.map((c) => ({ label: c.label, pass: c.present, detail: c.present ? undefined : 'not set on your responses', severity: c.severity }));
     categories.push({ key: 'headers', group: 'security', label: 'Security headers', grade: h.grade, summary: h.summary, checks });
   }
 
@@ -246,7 +278,7 @@ export function combineReport(inp: ReportInputs): Report {
     const t = inp.transport;
     issueCount += t.failed.length;
     securityGrades.push(t.grade);
-    const checks: CheckItem[] = t.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail }));
+    const checks: CheckItem[] = t.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail, severity: c.severity }));
     categories.push({ key: 'transport', group: 'security', label: 'HTTPS & redirects', grade: t.grade, summary: t.summary, checks });
   }
 
@@ -254,7 +286,7 @@ export function combineReport(inp: ReportInputs): Report {
     const e = inp.email;
     issueCount += e.failed.length;
     securityGrades.push(e.grade);
-    const checks: CheckItem[] = e.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail }));
+    const checks: CheckItem[] = e.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail, severity: c.severity }));
     categories.push({ key: 'email', group: 'security', label: 'Email spoofing protection', grade: e.grade, summary: e.summary, checks });
   }
 
