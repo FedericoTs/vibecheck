@@ -360,7 +360,7 @@ export default function Home() {
         </div>
         <p className="mt-5 kicker text-faint">
           free · open source · no signup · MIT ·{' '}
-          <a href={X_URL} className="transition-colors hover:text-ink">
+          <a href={X_URL} className="-my-1 inline-block py-1 transition-colors hover:text-ink">
             @federico_sciuca
           </a>
         </p>
