@@ -3,6 +3,7 @@ import type { HeadersScanResult } from './headers';
 import type { PathsScanResult } from './paths';
 import type { SecretsScanResult } from './secrets';
 import type { FundamentalsResult } from './fundamentals';
+import type { LighthouseResult } from './lighthouse';
 import { worstGrade } from './grade';
 
 export type CategoryGroup = 'security' | 'basics' | 'performance';
@@ -30,6 +31,7 @@ export interface ReportInputs {
   paths?: PathsScanResult | null;
   secrets?: SecretsScanResult | null;
   fundamentals?: FundamentalsResult | null;
+  lighthouse?: LighthouseResult | null;
 }
 
 const VERDICT: Record<Grade, string> = {
@@ -86,10 +88,14 @@ export function combineReport(inp: ReportInputs): Report {
     categories.push({ key: 'headers', group: 'security', label: 'Security headers', grade: h.grade, summary: h.summary, findings: h.missing.map((c) => `${c.label} — ${c.fix}`) });
   }
 
-  // ── basics (secondary — its own grade, never drags security) ─────────
+  // ── basics + performance (secondary — own grades, never drag security) ─
   if (inp.fundamentals) {
     const f = inp.fundamentals;
     categories.push({ key: 'fundamentals', group: 'basics', label: 'Fundamentals', grade: f.grade, summary: f.summary, findings: f.failed.map((c) => `${c.label} — ${c.fix}`) });
+  }
+  if (inp.lighthouse) {
+    const l = inp.lighthouse;
+    categories.push({ key: 'lighthouse', group: 'performance', label: 'Performance & quality', grade: l.grade, summary: l.summary, findings: l.low.map((x) => `${x.label} — ${x.score}/100`) });
   }
 
   const overallGrade = worstGrade(securityGrades);

@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { scanSupabase } from '@/lib/scan/supabase';
-import { combineReport, type Report, type ReportCategory } from '@/lib/scan/report';
+import { combineReport, type ReportInputs, type ReportCategory } from '@/lib/scan/report';
 import type { Grade } from '@/lib/scan/types';
 import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
 import type { SecretsScanResult } from '@/lib/scan/secrets';
 import type { FundamentalsResult } from '@/lib/scan/fundamentals';
+import type { LighthouseResult } from '@/lib/scan/lighthouse';
 
 const GITHUB_URL = 'https://github.com/FedericoTs/vibecheck';
 const X_URL = 'https://x.com/FedericoTs'; // TODO: set the real handle before launch
@@ -53,9 +54,11 @@ export default function Home() {
   const [sbUrl, setSbUrl] = useState('');
   const [anonKey, setAnonKey] = useState('');
   const [loading, setLoading] = useState(false);
-  const [report, setReport] = useState<Report | null>(null);
+  const [inputs, setInputs] = useState<ReportInputs | null>(null);
+  const [lhLoading, setLhLoading] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const report = useMemo(() => (inputs ? combineReport(inputs) : null), [inputs]);
 
   async function run(e: React.FormEvent) {
     e.preventDefault();
@@ -65,7 +68,8 @@ export default function Home() {
       return;
     }
     setLoading(true);
-    setReport(null);
+    setInputs(null);
+    setLhLoading(false);
     const postScan = <T,>(endpoint: string): Promise<T | null> =>
       fetch(endpoint, {
         method: 'POST',
@@ -87,7 +91,18 @@ export default function Home() {
       if (appUrl.trim() && !hdr && !paths && !secrets && !fundamentals) {
         setError('Could not reach that app URL — is it live and public?');
       }
-      setReport(combineReport({ supabase: sb, headers: hdr, paths, secrets, fundamentals }));
+      const base: ReportInputs = { supabase: sb, headers: hdr, paths, secrets, fundamentals };
+      setInputs(base);
+
+      // Lighthouse is slow (10-30s) — render the security card now, fill it in when ready.
+      if (appUrl.trim()) {
+        setLhLoading(true);
+        postScan<LighthouseResult>('/api/scan/lighthouse')
+          .then((lh) => {
+            if (lh) setInputs((prev) => ({ ...(prev ?? base), lighthouse: lh }));
+          })
+          .finally(() => setLhLoading(false));
+      }
     } finally {
       setLoading(false);
     }
@@ -105,8 +120,9 @@ export default function Home() {
   }
 
   function reset() {
-    setReport(null);
+    setInputs(null);
     setError('');
+    setLhLoading(false);
   }
 
   return (
@@ -238,13 +254,21 @@ export default function Home() {
             </div>
           )}
 
-          {/* fundamentals / performance — secondary, its own grade, not part of the security headline */}
-          {report.categories.some((c) => c.group !== 'security') && (
+          {/* fundamentals + performance — secondary, own grades, not part of the security headline */}
+          {(report.categories.some((c) => c.group !== 'security') || lhLoading) && (
             <div className="mt-8">
               <p className="kicker mb-3">
-                Fundamentals <span className="text-faint">· separate from the security grade</span>
+                Fundamentals &amp; performance <span className="text-faint">· separate from the security grade</span>
               </p>
-              <CategoryList categories={report.categories.filter((c) => c.group !== 'security')} />
+              {report.categories.some((c) => c.group !== 'security') && (
+                <CategoryList categories={report.categories.filter((c) => c.group !== 'security')} />
+              )}
+              {lhLoading && (
+                <p className="mt-3 border border-line bg-panel p-4 font-mono text-xs text-muted">
+                  Running Lighthouse…{' '}
+                  <span className="text-faint">performance · SEO · accessibility (10–30s)</span>
+                </p>
+              )}
             </div>
           )}
 
