@@ -48,3 +48,16 @@ describe('gradePaths', () => {
     expect(r.summary).toMatch(/publicly served/);
   });
 });
+
+describe('directory listing', () => {
+  const probe = SENSITIVE_PATHS.find((p) => p.path === '/uploads/')!;
+  it('flags a real Apache/nginx autoindex page', () => {
+    expect(classifyPath(probe, 200, 'text/html', '<html><head><title>Index of /uploads</title></head><body><h1>Index of /uploads</h1><pre><a href="../">../</a></pre></body></html>').exposed).toBe(true);
+    expect(classifyPath(probe, 200, 'text/html', '<html><body>Directory listing for /uploads/</body></html>').exposed).toBe(true);
+  });
+  it('does NOT fire on an SPA shell or a page that merely says "index"', () => {
+    expect(classifyPath(probe, 200, 'text/html', '<!doctype html><html><title>My App</title><div id=root></div></html>').exposed).toBe(false);
+    expect(classifyPath(probe, 200, 'text/html', '<html><h1>Index of our products</h1></html>').exposed).toBe(false);
+    expect(classifyPath(probe, 404, 'text/html', 'not found').exposed).toBe(false);
+  });
+});

@@ -42,6 +42,10 @@ export interface CertFacts {
   issuer?: string;
   /** hostnames the certificate is valid for (CN + SANs). */
   names?: string[];
+  /** the protocol a modern client negotiated, e.g. "TLSv1.3". */
+  protocol?: string;
+  /** did a forced TLS 1.0/1.1 handshake succeed? true = server accepts deprecated TLS. */
+  allowsLegacyTls?: boolean;
 }
 
 /** Days until the certificate expires; negative once it already has. */
@@ -123,6 +127,17 @@ export function analyzeTransport(facts: TransportFacts, host: string, now = Date
         pass: false,
         severity: 'medium',
         detail: `only ${days} day(s) left; if renewal is manual, do it now`,
+      });
+    }
+    if (facts.cert.allowsLegacyTls !== undefined) {
+      checks.push({
+        key: 'tls-version',
+        label: 'No deprecated TLS (1.0 / 1.1)',
+        pass: !facts.cert.allowsLegacyTls,
+        severity: 'medium',
+        detail: facts.cert.allowsLegacyTls
+          ? 'the server still accepts TLS 1.0 / 1.1 — both are deprecated and disabled in modern browsers'
+          : `modern TLS only${facts.cert.protocol ? ` (this visit negotiated ${facts.cert.protocol})` : ''}`,
       });
     }
     checks.push({

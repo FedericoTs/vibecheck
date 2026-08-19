@@ -48,6 +48,16 @@ const envMatch = (s: number, ct: string, b: string) =>
 const sqlMatch = (s: number, ct: string, b: string) =>
   s === 200 && !isHtmlFallback(ct, b) && /(create table|insert into|--\s*(mysql|postgres) dump|PGDMP)/i.test(b);
 
+/**
+ * A server directory index (Apache/nginx autoindex, python http.server). It
+ * lists every file in a directory to anyone. The signatures are specific enough
+ * that an SPA's index.html served at the same path won't match — a page titled
+ * "Index of our products" is not "Index of /".
+ */
+export const dirListMatch = (s: number, _ct: string, b: string): boolean =>
+  s === 200 &&
+  /<title>\s*Index of \/|<h1>\s*Index of \/|Directory listing for \/|<address>\s*Apache[\s\S]{0,80}Server at/i.test(b);
+
 // A single publicly-served secret file is a full breach, so one high finding
 // alone drops you to F (steeper than a missing header).
 const PENALTY: Record<Severity, number> = { high: 65, medium: 25, low: 10 };
@@ -68,6 +78,9 @@ export const SENSITIVE_PATHS: PathProbe[] = [
     severity: 'high',
     match: (s, _ct, b) => s === 200 && /^ref:\s+refs\/|^[0-9a-f]{40}\s*$/m.test(b.trim()),
   },
+  { path: '/uploads/', label: 'Directory listing (/uploads/)', severity: 'medium', match: dirListMatch },
+  { path: '/files/', label: 'Directory listing (/files/)', severity: 'medium', match: dirListMatch },
+  { path: '/images/', label: 'Directory listing (/images/)', severity: 'low', match: dirListMatch },
   { path: '/backup.sql', label: 'backup.sql (database dump)', severity: 'high', match: sqlMatch },
   { path: '/dump.sql', label: 'dump.sql (database dump)', severity: 'high', match: sqlMatch },
 ];

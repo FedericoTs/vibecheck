@@ -49,11 +49,49 @@ function inspectCert(host: string): Promise<CertFacts> {
           validTo: c.valid_to,
           issuer: asStrings(c.issuer?.O)[0] ?? asStrings(c.issuer?.CN)[0],
           names: [...new Set(names)],
+          protocol: socket.getProtocol() ?? undefined,
         });
       },
     );
     socket.on('error', () => done({ checked: false }));
     socket.on('timeout', () => done({ checked: false }));
+  });
+}
+
+/**
+ * Does the server still accept a deprecated TLS 1.0/1.1 handshake? We force the
+ * client to offer ONLY those versions; if the handshake completes, the server
+ * allows them. Undefined when the probe cannot run (e.g. the local OpenSSL has
+ * TLS 1.1 disabled) — we would rather report nothing than guess.
+ */
+function allowsLegacyTls(host: string): Promise<boolean | undefined> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (v: boolean | undefined) => {
+      if (settled) return;
+      settled = true;
+      resolve(v);
+      try {
+        socket.destroy();
+      } catch {
+        /* already closed */
+      }
+    };
+    let socket: import('node:tls').TLSSocket;
+    try {
+      socket = tls.connect(
+        { host, port: 443, servername: host, rejectUnauthorized: false, minVersion: 'TLSv1', maxVersion: 'TLSv1.1', timeout: TIMEOUT_MS },
+        () => finish(true), // handshake completed at <= TLS 1.1
+      );
+    } catch {
+      return resolve(undefined); // client can't even offer legacy TLS
+    }
+    // A handshake failure here is the GOOD outcome (server rejected legacy TLS),
+    // but a connection-level error we can't attribute means "unknown".
+    socket.on('error', (e: NodeJS.ErrnoException) =>
+      finish(/protocol|version|handshake|SSL|alert/i.test(String(e?.message)) ? false : undefined),
+    );
+    socket.on('timeout', () => finish(undefined));
   });
 }
 
@@ -160,12 +198,14 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
 
-  const [cert, enforced, redirects, takeover] = await Promise.all([
+  const [cert, enforced, redirects, takeover, legacyTls] = await Promise.all([
     inspectCert(target.hostname),
     httpsEnforced(target.hostname),
     Promise.all(REDIRECT_PARAMS.map(async (p) => ((await probeRedirect(target.origin, p)) ? p : null))),
     checkTakeover(target.hostname, target.origin),
+    allowsLegacyTls(target.hostname),
   ]);
+  if (cert.checked) cert.allowsLegacyTls = legacyTls;
 
   return NextResponse.json(
     analyzeTransport(
