@@ -482,12 +482,12 @@ export default function Home() {
                 {report.overallGrade}
               </div>
               <div className="flex min-w-0 flex-col justify-center px-5 py-5">
-                <p className="kicker mb-1.5 truncate">
-                  Security grade
-                  {appUrl.trim() ? (
-                    <span className="text-faint"> · {appUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '')}</span>
-                  ) : null}
-                </p>
+                <p className="kicker mb-1.5">Security grade</p>
+                {appUrl.trim() && (
+                  <p className="mb-1.5 truncate font-mono text-xs text-faint">
+                    {appUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '')}
+                  </p>
+                )}
                 <p className="font-display text-lg leading-snug text-ink sm:text-xl">{report.verdict}</p>
               </div>
             </div>
