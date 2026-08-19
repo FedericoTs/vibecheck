@@ -14,15 +14,25 @@ const mono = JetBrains_Mono({
   weight: ["400", "500", "600"],
 });
 
-const siteUrl =
-  process.env.NEXT_PUBLIC_SITE_URL ??
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+// Resolve the canonical base URL for absolute OG links, tolerating an unset OR
+// empty env var (an empty NEXT_PUBLIC_SITE_URL must fall through, which `??`
+// does not do), and never throwing at build time on a malformed value.
+function resolveBaseUrl(): URL {
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  const vercel = process.env.VERCEL_URL?.trim();
+  const candidate = explicit || (vercel ? `https://${vercel}` : "http://localhost:3000");
+  try {
+    return new URL(candidate);
+  } catch {
+    return new URL("http://localhost:3000");
+  }
+}
 
 const description =
   "A free, open-source security report card for AI-built apps. See exactly what a stranger can read from your Supabase project and how your app is configured — runs in your browser, we see nothing.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
+  metadataBase: resolveBaseUrl(),
   title: "vibecheck — is your app leaking?",
   description,
   openGraph: {

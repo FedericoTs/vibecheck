@@ -11,7 +11,7 @@ import type { FundamentalsResult } from '@/lib/scan/fundamentals';
 import type { LighthouseResult } from '@/lib/scan/lighthouse';
 
 const GITHUB_URL = 'https://github.com/FedericoTs/vibecheck';
-const X_URL = 'https://x.com/FedericoTs'; // TODO: set the real handle before launch
+const X_URL = 'https://x.com/federico_sciuca';
 
 function tone(grade: Grade | null): string {
   if (grade === 'A' || grade === 'B') return 'text-safe border-safe/40';
