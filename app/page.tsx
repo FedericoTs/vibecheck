@@ -60,6 +60,7 @@ export default function Home() {
   const [lhLoading, setLhLoading] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [autoDetected, setAutoDetected] = useState(false);
   const report = useMemo(() => (inputs ? combineReport(inputs) : null), [inputs]);
 
   async function run(e: React.FormEvent) {
@@ -72,6 +73,7 @@ export default function Home() {
     setLoading(true);
     setInputs(null);
     setLhLoading(false);
+    setAutoDetected(false);
     const postScan = <T,>(endpoint: string): Promise<T | null> =>
       fetch(endpoint, {
         method: 'POST',
@@ -84,15 +86,26 @@ export default function Home() {
 
     const headersP = appUrl.trim() ? postScan<HeadersScanResult>('/api/scan/headers') : Promise.resolve(null);
     const pathsP = appUrl.trim() ? postScan<PathsScanResult>('/api/scan/paths') : Promise.resolve(null);
-    const secretsP = appUrl.trim() ? postScan<SecretsScanResult>('/api/scan/secrets') : Promise.resolve(null);
+    const secretsP = appUrl.trim()
+      ? postScan<SecretsScanResult & { discovered?: { url: string; anonKey: string } | null }>('/api/scan/secrets')
+      : Promise.resolve(null);
     const fundamentalsP = appUrl.trim() ? postScan<FundamentalsResult>('/api/scan/fundamentals') : Promise.resolve(null);
-    const sbP =
-      sbUrl.trim() && anonKey.trim() ? scanSupabase({ url: sbUrl, anonKey }) : Promise.resolve(null);
     try {
-      const [hdr, paths, secrets, fundamentals, sb] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, sbP]);
+      const [hdr, paths, secrets, fundamentals] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP]);
       if (appUrl.trim() && !hdr && !paths && !secrets && !fundamentals) {
         setError('Could not reach that app URL — is it live and public?');
       }
+
+      // Database check: use whatever the user typed, else the Supabase project the
+      // app already exposes in its own bundle. Either way the probes run HERE, in
+      // the browser — vibecheck's servers never query anyone's database.
+      const creds =
+        sbUrl.trim() && anonKey.trim()
+          ? { url: sbUrl, anonKey }
+          : secrets?.discovered ?? null;
+      if (creds) setAutoDetected(!(sbUrl.trim() && anonKey.trim()));
+      const sb = creds ? await scanSupabase(creds) : null;
+
       const base: ReportInputs = { supabase: sb, headers: hdr, paths, secrets, fundamentals };
       setInputs(base);
 
@@ -174,7 +187,7 @@ export default function Home() {
                 onClick={() => setShowDb(true)}
                 className="block w-full border-b border-line px-4 py-3 text-left font-mono text-xs text-muted hover:text-ink transition-colors"
               >
-                + add Supabase project <span className="text-faint">— checks database exposure</span>
+                + Supabase project <span className="text-faint">— optional, we auto-detect it from your app</span>
               </button>
             ) : (
               <div className="border-b border-line p-4 space-y-3">
@@ -214,9 +227,9 @@ export default function Home() {
           {error && <p className="mt-4 font-mono text-xs text-danger">{error}</p>}
 
           <p className="mt-6 text-xs leading-relaxed text-faint">
-            Your keys and data never leave your machine — the database check runs entirely in your
-            browser, and vibecheck stores nothing about your project. It only shows what any visitor
-            can already reach.
+            Every other scanner queries your database from <em>their</em> servers. vibecheck runs the
+            database probes in <span className="text-muted">your own browser</span> — we never query
+            it, and we store nothing. It only ever reads what any visitor can already reach.
           </p>
         </>
       )}
@@ -239,6 +252,13 @@ export default function Home() {
               </p>
             </div>
           </div>
+
+          {autoDetected && (
+            <p className="mt-3 font-mono text-xs text-muted">
+              <span className="text-safe">✓</span> Found the Supabase project in your app&apos;s own bundle
+              and probed it <span className="text-ink">from your browser</span>.
+            </p>
+          )}
 
           {/* security categories — the headline */}
           <div className="mt-4">

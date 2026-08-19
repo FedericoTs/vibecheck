@@ -2,14 +2,19 @@ import { NextResponse } from 'next/server';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { safeFetch, UA } from '@/lib/scan/fetch';
 import { findSecrets, gradeSecrets, type SecretFinding } from '@/lib/scan/secrets';
+import { discoverSupabase } from '@/lib/scan/discover';
 
 export const runtime = 'nodejs';
 
 const MAX_BYTES = 2_000_000;
-const MAX_SCRIPTS = 8;
+const MAX_SCRIPTS = 20;
 const BUNDLE_TIMEOUT_MS = 8000;
 
-/** Same-origin <script src> URLs from the page HTML. */
+// Bundles most likely to carry the app's config/credentials get fetched first,
+// so a page with dozens of chunks still gets its main bundle scanned.
+const PRIORITY = /(main|index|app|entry|client|bundle|vendor|runtime|chunk|_app|layout|page)/i;
+
+/** Same-origin <script src> URLs from the page HTML, most-likely-relevant first. */
 export function sameOriginScripts(html: string, pageUrl: URL): string[] {
   const urls = new Set<string>();
   for (const m of html.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)) {
@@ -22,7 +27,9 @@ export function sameOriginScripts(html: string, pageUrl: URL): string[] {
       /* skip unparseable src */
     }
   }
-  return [...urls].slice(0, MAX_SCRIPTS);
+  const all = [...urls];
+  const ranked = [...all.filter((u) => PRIORITY.test(u)), ...all.filter((u) => !PRIORITY.test(u))];
+  return ranked.slice(0, MAX_SCRIPTS);
 }
 
 async function fetchText(url: string): Promise<string> {
@@ -71,6 +78,11 @@ export async function POST(request: Request): Promise<Response> {
   const bundles = await Promise.all(scripts.map(fetchText));
   for (const b of bundles) all.push(...findSecrets(b));
 
+  // Locate the Supabase project the app already exposes publicly, so the browser
+  // can run the database check without the user pasting anything. We only find
+  // it here — the table probes still run client-side.
+  const discovered = discoverSupabase([html, ...bundles].join('\n'));
+
   // Dedupe across HTML + every bundle.
   const seen = new Set<string>();
   const findings = all.filter((f) => {
@@ -80,5 +92,5 @@ export async function POST(request: Request): Promise<Response> {
     return true;
   });
 
-  return NextResponse.json(gradeSecrets(findings, finalUrl.host));
+  return NextResponse.json({ ...gradeSecrets(findings, finalUrl.host), discovered });
 }
