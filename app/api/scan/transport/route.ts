@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import tls from 'node:tls';
+import { Resolver } from 'node:dns/promises';
 import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { UA } from '@/lib/scan/fetch';
 import { analyzeTransport, isOpenRedirect, type CertFacts } from '@/lib/scan/transport';
+import { classifyTakeover, type TakeoverFinding } from '@/lib/scan/takeover';
 
 export const runtime = 'nodejs';
 
@@ -95,6 +97,50 @@ async function httpsEnforced(host: string): Promise<boolean | undefined> {
   }
 }
 
+/**
+ * Is this host a CNAME to somewhere, and does that somewhere still exist?
+ * Both halves matter: a live CNAME is normal, a dead one is a hijack waiting.
+ */
+async function checkTakeover(host: string, origin: string): Promise<TakeoverFinding> {
+  const resolver = new Resolver({ timeout: 5000, tries: 1 });
+  resolver.setServers(['1.1.1.1', '8.8.8.8']);
+  let cname: string | null = null;
+  try {
+    cname = (await resolver.resolveCname(host))[0] ?? null;
+  } catch {
+    cname = null; // no CNAME (an A record, or nothing) — nothing to take over
+  }
+  if (!cname) return classifyTakeover({ cname: null, cnameResolves: true, body: '', status: 0 });
+
+  let cnameResolves = true;
+  try {
+    await resolver.resolve4(cname);
+  } catch {
+    try {
+      await resolver.resolveCname(cname);
+    } catch {
+      cnameResolves = false; // the target itself is gone
+    }
+  }
+
+  let body = '';
+  let status = 0;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(origin, { redirect: 'manual', signal: controller.signal, headers: { 'user-agent': UA } });
+      status = res.status;
+      body = (await res.text()).slice(0, 60_000);
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    /* unreachable — classification falls back on the DNS facts */
+  }
+  return classifyTakeover({ cname, cnameResolves, body, status });
+}
+
 export async function POST(request: Request): Promise<Response> {
   const limited = rateLimitResponse(request.headers);
   if (limited) return limited;
@@ -114,10 +160,11 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
 
-  const [cert, enforced, redirects] = await Promise.all([
+  const [cert, enforced, redirects, takeover] = await Promise.all([
     inspectCert(target.hostname),
     httpsEnforced(target.hostname),
     Promise.all(REDIRECT_PARAMS.map(async (p) => ((await probeRedirect(target.origin, p)) ? p : null))),
+    checkTakeover(target.hostname, target.origin),
   ]);
 
   return NextResponse.json(
@@ -127,6 +174,7 @@ export async function POST(request: Request): Promise<Response> {
         httpsEnforced: enforced,
         openRedirectParams: redirects.filter((p): p is string => !!p),
         redirectChecked: true,
+        takeover,
       },
       target.hostname,
     ),

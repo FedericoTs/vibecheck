@@ -1,5 +1,6 @@
 import type { Grade } from './types';
 import { scoreToGrade } from './grade';
+import type { TakeoverFinding } from './takeover';
 
 /**
  * HTTPS, certificate health, and redirect handling.
@@ -90,6 +91,7 @@ export interface TransportFacts {
   /** query params that redirected off-site, e.g. ['next', 'redirect']. */
   openRedirectParams: string[];
   redirectChecked: boolean;
+  takeover?: TakeoverFinding;
 }
 
 const PENALTY = { high: 35, medium: 15, low: 7 } as const;
@@ -157,6 +159,18 @@ export function analyzeTransport(facts: TransportFacts, host: string, now = Date
         open.length === 0
           ? 'redirect parameters do not send visitors off-site'
           : `?${open.join('/?')} sends visitors to any site an attacker names — a phishing link that looks like yours`,
+    });
+  }
+
+  // Subdomain takeover: only reported when there is something to say.
+  if (facts.takeover && facts.takeover.verdict !== 'not-applicable') {
+    const t = facts.takeover;
+    checks.push({
+      key: 'subdomain-takeover',
+      label: 'Domain cannot be hijacked (no dangling CNAME)',
+      pass: t.verdict === 'safe',
+      severity: 'high',
+      detail: t.detail,
     });
   }
 
