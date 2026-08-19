@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { headers } from "next/headers";
 import "./globals.css";
 
 const display = Space_Grotesk({
@@ -28,26 +29,44 @@ function resolveBaseUrl(): URL {
   }
 }
 
+// Prefer the PUBLIC host the request actually came in on (the production alias
+// or a custom domain), so OG images never point at Vercel's protected per-deploy
+// URL. Falls back to the env/VERCEL_URL resolver.
+async function baseUrl(): Promise<URL> {
+  try {
+    const h = await headers();
+    const host = h.get("x-forwarded-host") ?? h.get("host");
+    if (host) return new URL(`${h.get("x-forwarded-proto") ?? "https"}://${host}`);
+  } catch {
+    /* headers() unavailable (e.g. static) — fall through */
+  }
+  return resolveBaseUrl();
+}
+
 const description =
   "A free, open-source security report card for AI-built apps. See exactly what a stranger can read from your Supabase project and how your app is configured — runs in your browser, we see nothing.";
 
-export const metadata: Metadata = {
-  metadataBase: resolveBaseUrl(),
-  title: "vibecheck — is your app leaking?",
-  description,
-  openGraph: {
-    title: "vibecheck — is your app leaking?",
+const TITLE = "vibecheck — is your app leaking?";
+
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    metadataBase: await baseUrl(),
+    title: TITLE,
     description,
-    images: [{ url: "/api/og", width: 1200, height: 630 }],
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "vibecheck — is your app leaking?",
-    description,
-    images: ["/api/og"],
-  },
-};
+    openGraph: {
+      title: TITLE,
+      description,
+      images: [{ url: "/api/og", width: 1200, height: 630 }],
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: TITLE,
+      description,
+      images: ["/api/og"],
+    },
+  };
+}
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
