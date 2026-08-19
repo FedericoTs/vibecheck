@@ -444,7 +444,10 @@ export default function Home() {
             </div>
             <div className="flex min-w-0 flex-col justify-center p-5">
               <p className="kicker mb-1 truncate">
-                Security grade{appUrl.trim() ? <span className="text-faint"> · {appUrl.replace(/^https?:\/\//, '')}</span> : null}
+                Security grade
+                {appUrl.trim() ? (
+                  <span className="text-faint"> · {appUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '')}</span>
+                ) : null}
               </p>
               <p className="font-display text-lg leading-snug">{report.verdict}</p>
               <p className="mt-2 font-mono text-xs text-muted">
