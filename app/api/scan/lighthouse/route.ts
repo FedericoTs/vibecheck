@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { parsePsi } from '@/lib/scan/lighthouse';
 
@@ -13,6 +14,9 @@ const CATEGORIES = ['PERFORMANCE', 'ACCESSIBILITY', 'BEST_PRACTICES', 'SEO'];
 const CACHE = 'public, s-maxage=3600, stale-while-revalidate=86400';
 
 export async function GET(request: Request): Promise<Response> {
+  const limited = rateLimitResponse(request.headers);
+  if (limited) return limited;
+
   const rawUrl = new URL(request.url).searchParams.get('url') ?? '';
 
   let target: URL;

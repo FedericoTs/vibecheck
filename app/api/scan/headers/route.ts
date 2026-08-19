@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { safeFetch } from '@/lib/scan/fetch';
 import { gradeHeaders } from '@/lib/scan/headers';
@@ -6,6 +7,9 @@ import { gradeHeaders } from '@/lib/scan/headers';
 export const runtime = 'nodejs';
 
 export async function POST(request: Request): Promise<Response> {
+  const limited = rateLimitResponse(request.headers);
+  if (limited) return limited;
+
   let body: unknown;
   try {
     body = await request.json();

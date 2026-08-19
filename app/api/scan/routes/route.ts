@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { safeFetch, UA } from '@/lib/scan/fetch';
 import { ROUTE_PROBES, classifyRoute, gradeRoutes, type RouteProbe, type RouteFinding } from '@/lib/scan/routes';
@@ -53,6 +54,9 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const limited = rateLimitResponse(request.headers);
+  if (limited) return limited;
+
   let body: unknown;
   try {
     body = await request.json();

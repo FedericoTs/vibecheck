@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { safeFetch, UA } from '@/lib/scan/fetch';
 import { findSecrets, gradeSecrets, isSourceMap, countPublicGoogleKeys, type SecretFinding } from '@/lib/scan/secrets';
@@ -48,6 +49,9 @@ async function fetchText(url: string): Promise<string> {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const limited = rateLimitResponse(request.headers);
+  if (limited) return limited;
+
   let body: unknown;
   try {
     body = await request.json();

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { SENSITIVE_PATHS, classifyPath, gradePaths, type PathProbe, type PathFinding } from '@/lib/scan/paths';
 
@@ -27,6 +28,9 @@ async function probeOne(base: string, probe: PathProbe): Promise<PathFinding> {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const limited = rateLimitResponse(request.headers);
+  if (limited) return limited;
+
   let body: unknown;
   try {
     body = await request.json();
