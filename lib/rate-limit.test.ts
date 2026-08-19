@@ -12,10 +12,10 @@ describe('clientKey', () => {
 });
 
 describe('checkRateLimit', () => {
-  it('allows a burst up to the cap, then blocks with a retry hint', () => {
+  it('allows ~10 full reports per minute, then blocks with a retry hint', () => {
     const now = 1_000_000;
     let last = checkRateLimit('ip', now);
-    for (let i = 0; i < 11; i++) last = checkRateLimit('ip', now);
+    for (let i = 0; i < 59; i++) last = checkRateLimit('ip', now);
     expect(last.allowed).toBe(true);
     expect(last.remaining).toBe(0);
 
@@ -26,14 +26,14 @@ describe('checkRateLimit', () => {
 
   it('the window resets', () => {
     const now = 2_000_000;
-    for (let i = 0; i < 12; i++) checkRateLimit('ip2', now);
+    for (let i = 0; i < 60; i++) checkRateLimit('ip2', now);
     expect(checkRateLimit('ip2', now).allowed).toBe(false);
     expect(checkRateLimit('ip2', now + 61_000).allowed).toBe(true);
   });
 
   it('limits are per client, so one abuser cannot block everyone else', () => {
     const now = 3_000_000;
-    for (let i = 0; i < 12; i++) checkRateLimit('noisy', now);
+    for (let i = 0; i < 60; i++) checkRateLimit('noisy', now);
     expect(checkRateLimit('noisy', now).allowed).toBe(false);
     expect(checkRateLimit('quiet', now).allowed).toBe(true);
   });

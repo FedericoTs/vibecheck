@@ -19,7 +19,11 @@ export interface RateLimitResult {
 }
 
 const WINDOW_MS = 60_000;
-const MAX_PER_WINDOW = 12; // one full report ≈ 6 endpoint calls, so ~2 scans/min
+// One full report fans out to ~6 endpoint calls, so this is ~10 reports per
+// minute per IP: far more than any human scanning apps back to back, and still
+// a hard ceiling on scripted abuse. Set too low (it was 12) real users hit the
+// wall after two scans, which for a free viral tool is worse than the abuse.
+const MAX_PER_WINDOW = 60;
 
 type Bucket = { count: number; resetAt: number };
 const buckets = new Map<string, Bucket>();
