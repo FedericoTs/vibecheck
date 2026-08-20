@@ -231,6 +231,11 @@ function GradeGrid({ categories }: { categories: ReportCategory[] }) {
 }
 
 function repoFix(f: RepoFinding): string {
+  if (f.kind === 'dependency') {
+    return f.label.startsWith('MALICIOUS')
+      ? 'Remove this package immediately — it is flagged as malicious. Then rotate every credential that was present on any machine that ran an install (the package may have exfiltrated them), and audit your lockfile for anything else it pulled in.'
+      : 'Update this dependency to a patched version — `npm audit fix`, or bump it directly and reinstall. If nothing depends on it directly, it came in transitively: update the parent package or add an override.';
+  }
   if (f.kind === 'secret') {
     return 'This is committed to the repo, so treat it as compromised: ROTATE the key, then load it from an environment variable instead of source. Remove it from the working tree (git rm --cached), add the file to .gitignore, and if it is sensitive, rewrite history so it is not recoverable from old commits.';
   }

@@ -115,7 +115,7 @@ export function detectCrossTenant(path: string, content: string): ScopingFinding
 
 // ── the scan ─────────────────────────────────────────────────────────
 
-export type RepoFindingKind = 'secret' | 'cross-tenant';
+export type RepoFindingKind = 'secret' | 'cross-tenant' | 'dependency';
 
 export interface RepoFinding {
   kind: RepoFindingKind;
