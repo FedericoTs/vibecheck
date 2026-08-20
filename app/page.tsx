@@ -15,6 +15,7 @@ import type { EmailAuthResult } from '@/lib/scan/email-auth';
 import type { TransportResult } from '@/lib/scan/transport';
 import type { VisibilityResult } from '@/lib/scan/visibility';
 import type { RepoScanResult, RepoFinding } from '@/lib/scan/repo';
+import { toCycloneDX } from '@/lib/scan/sbom';
 import type { SecretsScanResult } from '@/lib/scan/secrets';
 import type { FundamentalsResult } from '@/lib/scan/fundamentals';
 import type { LighthouseResult } from '@/lib/scan/lighthouse';
@@ -230,7 +231,26 @@ function GradeGrid({ categories }: { categories: ReportCategory[] }) {
   );
 }
 
+function downloadSbom(result: RepoScanResult): void {
+  const deps = result.dependencies ?? [];
+  if (deps.length === 0) return;
+  // Real web app (not the artifact sandbox), so a client-side blob download works.
+  const bom = toCycloneDX(deps, result.ref, new Date().toISOString());
+  const blob = new Blob([JSON.stringify(bom, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${result.ref.replace('/', '-')}-sbom.cdx.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function repoFix(f: RepoFinding): string {
+  if (f.kind === 'dockerfile') {
+    return 'Harden the Dockerfile: add a non-root `USER`, pin the base image to a specific version or digest (not :latest), never bake secrets into ENV/ARG (pass them at runtime), and avoid ADD-from-URL or piping downloads into a shell.';
+  }
   if (f.kind === 'dependency') {
     return f.label.startsWith('MALICIOUS')
       ? 'Remove this package immediately — it is flagged as malicious. Then rotate every credential that was present on any machine that ran an install (the package may have exfiltrated them), and audit your lockfile for anything else it pulled in.'
@@ -301,6 +321,14 @@ function RepoReport({ result, onReset }: { result: RepoScanResult; onReset: () =
         <button onClick={onReset} className="border border-line px-4 py-2 font-mono text-xs text-muted transition-colors hover:border-ink hover:text-ink">
           ↺ scan another
         </button>
+        {(result.dependencies?.length ?? 0) > 0 && (
+          <button
+            onClick={() => downloadSbom(result)}
+            className="border border-line px-4 py-2 font-mono text-xs text-muted transition-colors hover:border-ink hover:text-ink"
+          >
+            ↓ download SBOM (CycloneDX · {result.dependencies!.length} deps)
+          </button>
+        )}
       </div>
     </section>
   );

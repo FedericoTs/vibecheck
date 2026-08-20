@@ -10,6 +10,7 @@ import {
   type RepoScanResult,
   type RepoFinding,
 } from '@/lib/scan/repo';
+import { lintDockerfile } from '@/lib/scan/dockerfile';
 import {
   parseNpmLock,
   parsePackageJson,
@@ -106,13 +107,13 @@ const SEV_RANK = { critical: 3, high: 2, medium: 1 } as const;
  * carry a known vulnerability or are outright malicious. Best-effort: any
  * network failure returns no findings rather than a wrong grade.
  */
-async function scanDependencies(owner: string, repo: string, branch: string, tree: TreeEntry[]): Promise<RepoFinding[]> {
+async function scanDependencies(owner: string, repo: string, branch: string, tree: TreeEntry[]): Promise<{ findings: RepoFinding[]; deps: Dep[] }> {
   const manifests = tree
     .map((e) => e.path)
     .filter((p) => DEP_MANIFESTS.some((m) => p === m || p.endsWith('/' + m)) && !/node_modules\//.test(p))
     .sort((a, b) => a.split('/').length - b.split('/').length) // root manifests first
     .slice(0, 6);
-  if (manifests.length === 0) return [];
+  if (manifests.length === 0) return { findings: [], deps: [] };
 
   const loaded = await mapLimit(manifests, 4, async (p) => ({ p, content: await fetchManifest(owner, repo, branch, p) }));
   const lockDeps: Dep[] = [];
@@ -130,7 +131,7 @@ async function scanDependencies(owner: string, repo: string, branch: string, tre
   const uniq = new Map<string, Dep>();
   for (const d of deps) uniq.set(`${d.ecosystem}:${d.name}@${d.version}`, d);
   const list = [...uniq.values()].slice(0, 500);
-  if (list.length === 0) return [];
+  if (list.length === 0) return { findings: [], deps: list };
 
   let batch: unknown;
   try {
@@ -140,13 +141,13 @@ async function scanDependencies(owner: string, repo: string, branch: string, tre
       body: JSON.stringify(osvBatchBody(list)),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) return [];
+    if (!res.ok) return { findings: [], deps: list };
     batch = await res.json();
   } catch {
-    return [];
+    return { findings: [], deps: list };
   }
   const vulnerable = parseOsvBatch(list, (batch as { results?: Array<{ vulns?: Array<{ id: string }> }> })?.results);
-  if (vulnerable.length === 0) return [];
+  if (vulnerable.length === 0) return { findings: [], deps: list };
 
   const ids = [...new Set(vulnerable.flatMap((v) => v.ids))].slice(0, 30);
   const details = new Map<string, ReturnType<typeof classifyVuln>>();
@@ -176,7 +177,25 @@ async function scanDependencies(owner: string, repo: string, branch: string, tre
     });
   }
   // Worst first, and capped so a repo with dozens of stale deps stays readable.
-  return findings.sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity]).slice(0, 40);
+  return { findings: findings.sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity]).slice(0, 40), deps: list };
+}
+
+/** Lint any Dockerfiles in the repo (only the subset that containerises has one). */
+async function scanDockerfiles(owner: string, repo: string, branch: string, tree: TreeEntry[]): Promise<RepoFinding[]> {
+  const paths = tree
+    .map((e) => e.path)
+    .filter((p) => /(^|\/)Dockerfile(\.[\w.-]+)?$/i.test(p) && !/node_modules\//.test(p))
+    .slice(0, 4);
+  if (paths.length === 0) return [];
+  const loaded = await mapLimit(paths, 4, async (p) => ({ p, content: await fetchRaw(owner, repo, branch, p) }));
+  const out: RepoFinding[] = [];
+  for (const { p, content } of loaded) {
+    if (!content) continue;
+    for (const f of lintDockerfile(content)) {
+      out.push({ kind: 'dockerfile', path: p, label: `${f.label} (${p})`, severity: f.severity, detail: f.detail });
+    }
+  }
+  return out;
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -214,11 +233,13 @@ export async function POST(request: Request): Promise<Response> {
   const files = (await mapLimit(paths, CONCURRENCY, async (p) => ({ path: p, content: await fetchRaw(ref.owner, ref.repo, branch, p) }))).filter(
     (f) => f.content.length > 0,
   );
-  const [sourceFindings, depFindings] = await Promise.all([
+  const [sourceFindings, depResult, dockerFindings] = await Promise.all([
     Promise.resolve(analyzeRepoFiles(files)),
     scanDependencies(ref.owner, ref.repo, branch, tree),
+    scanDockerfiles(ref.owner, ref.repo, branch, tree),
   ]);
-  const findings = [...sourceFindings, ...depFindings];
+  const findings = [...sourceFindings, ...dockerFindings, ...depResult.findings];
+  const depFindings = depResult.findings;
   const grade = gradeRepo(findings);
 
   return NextResponse.json({
@@ -226,6 +247,7 @@ export async function POST(request: Request): Promise<Response> {
     ref: refStr,
     filesScanned: files.length,
     findings,
+    dependencies: depResult.deps,
     grade,
     summary:
       findings.length === 0

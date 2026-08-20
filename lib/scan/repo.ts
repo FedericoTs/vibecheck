@@ -1,4 +1,5 @@
 import { findSecrets } from './secrets';
+import type { Dep } from './deps';
 
 /**
  * Public-repository analysis — the source-level half of the picture a URL scan
@@ -115,7 +116,7 @@ export function detectCrossTenant(path: string, content: string): ScopingFinding
 
 // ── the scan ─────────────────────────────────────────────────────────
 
-export type RepoFindingKind = 'secret' | 'cross-tenant' | 'dependency';
+export type RepoFindingKind = 'secret' | 'cross-tenant' | 'dependency' | 'dockerfile';
 
 export interface RepoFinding {
   kind: RepoFindingKind;
@@ -130,6 +131,8 @@ export interface RepoScanResult {
   ref: string;
   filesScanned: number;
   findings: RepoFinding[];
+  /** Full resolved dependency inventory — powers the downloadable SBOM. */
+  dependencies?: Dep[];
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   summary: string;
   error?: string;
