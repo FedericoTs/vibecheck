@@ -57,14 +57,17 @@ export async function generateMetadata(): Promise<Metadata> {
     openGraph: {
       title: TITLE,
       description,
-      images: [{ url: "/api/og", width: 1200, height: 630 }],
+      siteName: "vibecheck",
+      images: [{ url: "/api/og", width: 1200, height: 630, type: "image/png", alt: "vibecheck — a security report card for AI-built apps" }],
       type: "website",
     },
     twitter: {
       card: "summary_large_image",
+      site: "@federico_sciuca",
+      creator: "@federico_sciuca",
       title: TITLE,
       description,
-      images: ["/api/og"],
+      images: [{ url: "/api/og", alt: "vibecheck — a security report card for AI-built apps" }],
     },
   };
 }
