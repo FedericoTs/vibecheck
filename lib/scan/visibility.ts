@@ -32,6 +32,8 @@ export interface VisibilityResult {
   checks: VisibilityCheck[];
   failed: VisibilityCheck[];
   crawlers: CrawlerAccess[];
+  /** The opening words a non-JS reader receives, quoted verbatim as evidence. */
+  excerpt: { excerpt: string; words: number };
   grade: Grade;
   score: number;
   summary: string;
@@ -54,6 +56,24 @@ export function visibleText(html: string): string {
 
 export function visibleTextLength(html: string): number {
   return visibleText(html).length;
+}
+
+/**
+ * The opening words a reader that does not execute JavaScript actually
+ * receives, quoted verbatim.
+ *
+ * This is evidence, not a metric. "Your page is a JS-only shell" is an
+ * abstraction people argue with; showing them the fourteen words a crawler got
+ * is not arguable. Fully deterministic — the served bytes with markup removed,
+ * no rendering, no inference, no model in the loop.
+ *
+ * It reports what WE fetched. It is a statement about this response, not a
+ * claim about what any particular crawler chooses to do with it.
+ */
+export function crawlerExcerpt(html: string, maxWords = 40): { excerpt: string; words: number } {
+  const words = visibleText(html).split(/\s+/).filter(Boolean);
+  const head = words.slice(0, maxWords).join(' ');
+  return { excerpt: words.length > maxWords ? `${head}…` : head, words: words.length };
 }
 
 // ── content quality: readability, headings, alt text ─────────────────
@@ -220,6 +240,8 @@ export function analyzeVisibility(facts: VisibilityFacts, host = ''): Visibility
   const { html } = facts;
   const jsOnly = isJsOnlyShell(html);
   const blocked = blockedAiAgents(facts.robotsTxt);
+  // Quoted verbatim in the check below — evidence beats an abstraction.
+  const excerpt = crawlerExcerpt(html);
 
   const checks: VisibilityCheck[] = [
     {
@@ -228,8 +250,8 @@ export function analyzeVisibility(facts: VisibilityFacts, host = ''): Visibility
       pass: !jsOnly,
       severity: 'high',
       detail: jsOnly
-        ? `the served HTML holds ~${visibleTextLength(html)} characters of text — crawlers and most AI assistants never run your JavaScript, so they see an empty page`
-        : `~${visibleTextLength(html)} characters of text are in the HTML itself`,
+        ? `the served HTML holds only ${excerpt.words} word(s) of text — crawlers and most AI assistants never run your JavaScript, so this is all they get: "${excerpt.excerpt}"`
+        : `${excerpt.words} words are in the HTML itself. A crawler's first sight of this page: "${excerpt.excerpt}"`,
     },
     {
       key: 'structured-data',
@@ -333,6 +355,7 @@ export function analyzeVisibility(facts: VisibilityFacts, host = ''): Visibility
     checks,
     failed,
     crawlers: crawlerMatrix(facts.robotsTxt),
+    excerpt,
     grade: scoreToGrade(score),
     score,
     summary: jsOnly

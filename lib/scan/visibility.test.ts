@@ -12,6 +12,7 @@ import {
   altTextCoverage,
   robotsAllows,
   crawlerMatrix,
+  crawlerExcerpt,
 } from './visibility';
 
 const facts = (over: Partial<VisibilityFacts> = {}): VisibilityFacts => ({
@@ -182,5 +183,35 @@ describe('crawler access matrix (robots.txt)', () => {
     expect(m.find((c) => c.name === 'Googlebot')?.allowed).toBe(true);
     expect(m.some((c) => c.group === 'search')).toBe(true);
     expect(m.some((c) => c.group === 'ai')).toBe(true);
+  });
+});
+
+describe('crawlerExcerpt — evidence, not an abstraction', () => {
+  it('quotes the opening words a non-JS reader receives', () => {
+    const html = '<html><body><h1>Pricing</h1><p>Simple, honest pricing for teams.</p></body></html>';
+    const e = crawlerExcerpt(html);
+    expect(e.excerpt).toBe('Pricing Simple, honest pricing for teams.');
+    expect(e.words).toBe(6);
+  });
+
+  it('shows an empty shell for what it is — the title and nothing else', () => {
+    // The <title> genuinely IS text a crawler receives, so it counts. That the
+    // entire page amounts to one word is precisely the finding.
+    const e = crawlerExcerpt(SPA_SHELL);
+    expect(e.words).toBe(1);
+    expect(e.excerpt).toBe('App');
+  });
+
+  it('excludes script and style content, and truncates with an ellipsis', () => {
+    const html = '<style>.a{color:red}</style><script>secret()</script><p>' + 'word '.repeat(50) + '</p>';
+    const e = crawlerExcerpt(html, 5);
+    expect(e.excerpt).toBe('word word word word word…');
+    expect(e.words).toBe(50);
+  });
+
+  it('surfaces the excerpt on the result so the report can quote it', () => {
+    const r = analyzeVisibility(facts(), 'app.com');
+    expect(r.excerpt.words).toBeGreaterThan(0);
+    expect(get(r, 'content-in-html').detail).toContain(r.excerpt.excerpt.slice(0, 20));
   });
 });
