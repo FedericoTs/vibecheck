@@ -6,6 +6,7 @@ import {
   firestoreDocs,
   gradeFirebase,
   scanFirebase,
+  firebaseConfigFromText,
 } from './firebase';
 import type { Fetchy } from './types';
 
@@ -121,5 +122,20 @@ describe('scanFirebase', () => {
     expect(r.exposedCount).toBe(0);
     expect(r.grade).toBe('A');
     expect(r.summary).toMatch(/No Firebase data readable/);
+  });
+});
+
+describe('firebaseConfigFromText — manual paste (mobile apps)', () => {
+  it('takes a pasted config at face value, no corroboration guard', () => {
+    // A bare config that discoverFirebase would REJECT (no firebaseapp.com etc.)
+    const bare = 'projectId: "my-mobile-app", apiKey: "AIzaSyA1234567890abcdefghijklmnopqrstuv"';
+    expect(discoverFirebase(bare)).toBe(null); // auto-detect refuses it
+    const manual = firebaseConfigFromText(bare); // manual accepts it
+    expect(manual?.projectId).toBe('my-mobile-app');
+    expect(manual?.apiKey).toBe('AIzaSyA1234567890abcdefghijklmnopqrstuv');
+  });
+
+  it('returns null when there is no project id to work with', () => {
+    expect(firebaseConfigFromText('just some text')).toBe(null);
   });
 });

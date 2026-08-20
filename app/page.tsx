@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { scanSupabase } from '@/lib/scan/supabase';
-import { scanFirebase, type FirebaseConfig } from '@/lib/scan/firebase';
+import { scanFirebase, extractCollections, firebaseConfigFromText, type FirebaseConfig } from '@/lib/scan/firebase';
 import { combineReport, severityCounts, SEVERITY_ORDER, type ReportInputs, type ReportCategory, type CheckItem, type Report, type Severity } from '@/lib/scan/report';
 import { buildFixPrompt, fixFor } from '@/lib/scan/fixes';
 import type { Grade } from '@/lib/scan/types';
@@ -349,7 +349,8 @@ export default function Home() {
   const [autoDetected, setAutoDetected] = useState(false);
   const [skipped, setSkipped] = useState<string[]>([]);
   const [rateLimited, setRateLimited] = useState(false);
-  const [mode, setMode] = useState<'url' | 'repo'>('url');
+  const [mode, setMode] = useState<'url' | 'repo' | 'backend'>('url');
+  const [fbConfig, setFbConfig] = useState('');
   const [repoUrl, setRepoUrl] = useState('');
   const [repoResult, setRepoResult] = useState<RepoScanResult | null>(null);
   const [repoLoading, setRepoLoading] = useState(false);
@@ -527,6 +528,34 @@ export default function Home() {
     }
   }
 
+  async function runBackend(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    const hasSupa = sbUrl.trim() && anonKey.trim();
+    const fb = fbConfig.trim() ? firebaseConfigFromText(fbConfig) : null;
+    if (!hasSupa && !fb) {
+      setError('Paste your Supabase URL + key, or your Firebase config.');
+      return;
+    }
+    setLoading(true);
+    setInputs(null);
+    setAutoDetected(false);
+    setSkipped([]);
+    try {
+      // A mobile / headless app has no scannable page, but it embeds the same
+      // backend config a web app does — so the database checks apply identically,
+      // and still run in the browser.
+      const [sb, firebase] = await Promise.all([
+        hasSupa ? scanSupabase({ url: sbUrl, anonKey }) : Promise.resolve(null),
+        fb ? scanFirebase({ config: fb, collections: extractCollections(fbConfig) }).catch(() => null) : Promise.resolve(null),
+      ]);
+      if (!sb && !firebase) setError('Could not reach that backend — double-check the values you pasted.');
+      else setInputs({ supabase: sb, firebase });
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function runRepo(e: React.FormEvent) {
     e.preventDefault();
     if (!repoUrl.trim() || repoLoading) return;
@@ -596,6 +625,12 @@ export default function Home() {
               className={`flex-1 px-3 py-2 uppercase tracking-wider transition ${mode === 'repo' ? 'bg-ink text-canvas' : 'text-muted hover:text-ink'}`}
             >
               Public repo
+            </button>
+            <button
+              onClick={() => setMode('backend')}
+              className={`flex-1 px-3 py-2 uppercase tracking-wider transition ${mode === 'backend' ? 'bg-ink text-canvas' : 'text-muted hover:text-ink'}`}
+            >
+              App backend
             </button>
           </div>
 
@@ -687,7 +722,59 @@ export default function Home() {
           )}
           {mode === 'repo' && repoError && <p className="mt-4 font-mono text-xs text-danger">{repoError}</p>}
 
-          {loading && (
+          {mode === 'backend' && (
+            <form onSubmit={runBackend} className="border border-line bg-panel">
+              <div className="border-b border-line p-4">
+                <p className="mb-3 text-xs leading-relaxed text-muted">
+                  No public web page to point at — a mobile app, an API, anything headless? Paste the backend
+                  config it ships. The database checks run in <span className="text-ink">your browser</span>, exactly
+                  like a web scan, because the risk lives in the backend, not the client.
+                </p>
+                <label className="kicker block mb-2">Supabase</label>
+                <input
+                  value={sbUrl}
+                  onChange={(e) => setSbUrl(e.target.value)}
+                  placeholder="https://xxxxxxxx.supabase.co"
+                  className="w-full bg-transparent font-mono text-base text-ink placeholder-faint outline-none sm:text-sm"
+                />
+                <input
+                  value={anonKey}
+                  onChange={(e) => setAnonKey(e.target.value)}
+                  placeholder="anon / publishable key (eyJ… or sb_publishable_…)"
+                  className="mt-2 w-full bg-transparent font-mono text-base text-ink placeholder-faint outline-none sm:text-xs"
+                />
+              </div>
+              <div className="border-b border-line p-4">
+                <label className="kicker block mb-2">…or Firebase</label>
+                <textarea
+                  value={fbConfig}
+                  onChange={(e) => setFbConfig(e.target.value)}
+                  rows={4}
+                  placeholder='paste your firebaseConfig (projectId, apiKey, storageBucket)'
+                  className="w-full resize-none bg-transparent font-mono text-base text-ink placeholder-faint outline-none sm:text-xs"
+                />
+              </div>
+              <div className="flex items-center justify-between p-4">
+                <span className="kicker text-faint">runs in your browser · stores nothing</span>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="border border-ink bg-ink px-5 py-2 font-mono text-xs font-medium uppercase tracking-wider text-canvas transition hover:bg-transparent hover:text-ink disabled:opacity-40"
+                >
+                  {loading ? 'checking…' : 'check backend →'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {loading && mode === 'backend' && (
+            <div className="mt-4 flex items-center gap-2.5 border border-line bg-panel px-4 py-3">
+              <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-warn" />
+              <p className="font-mono text-xs text-muted">Probing your backend from this browser — tables, storage, auth config…</p>
+            </div>
+          )}
+
+          {loading && mode === 'url' && (
             <div className="mt-4 border border-line bg-panel">
               <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
                 <div className="flex items-center gap-2.5">

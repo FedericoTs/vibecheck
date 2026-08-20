@@ -61,6 +61,22 @@ export function discoverFirebase(text: string): FirebaseConfig | null {
 }
 
 /**
+ * Lenient parse for a Firebase config the user EXPLICITLY pasted (e.g. from a
+ * mobile app). discoverFirebase() applies a corroboration guard to avoid false
+ * positives during an automatic web scan; here the user has said "this is my
+ * Firebase config", so we take a projectId + optional apiKey/bucket at face value.
+ */
+export function firebaseConfigFromText(text: string): FirebaseConfig | null {
+  const projectId = text.match(PROJECT_ID)?.[1] ?? text.match(AUTH_DOMAIN)?.[1];
+  if (!projectId) return null;
+  return {
+    projectId,
+    apiKey: text.match(API_KEY)?.[1],
+    storageBucket: text.match(STORAGE_BUCKET)?.[1],
+  };
+}
+
+/**
  * Collection names the app itself references — far better than guessing.
  * Matches the modular `collection(db, "users")` and legacy `.collection("users")`.
  */
