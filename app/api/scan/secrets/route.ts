@@ -1,53 +1,14 @@
 import { NextResponse } from 'next/server';
 import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
-import { safeFetch, UA } from '@/lib/scan/fetch';
+import { safeFetch } from '@/lib/scan/fetch';
+import { scriptUrls, fetchScript as fetchText, MAX_BYTES } from '@/lib/scan/bundle';
 import { findSecrets, gradeSecrets, isSourceMap, sourcesFromMap, countPublicGoogleKeys, type SecretFinding } from '@/lib/scan/secrets';
 import { discoverSupabase } from '@/lib/scan/discover';
 import { discoverFirebase, extractCollections } from '@/lib/scan/firebase';
 import { scanLibraries } from '@/lib/scan/libs';
 
 export const runtime = 'nodejs';
-
-const MAX_BYTES = 2_000_000;
-const MAX_SCRIPTS = 20;
-const BUNDLE_TIMEOUT_MS = 8000;
-
-// Bundles most likely to carry the app's config/credentials get fetched first,
-// so a page with dozens of chunks still gets its main bundle scanned.
-const PRIORITY = /(main|index|app|entry|client|bundle|vendor|runtime|chunk|_app|layout|page)/i;
-
-/** Same-origin <script src> URLs from the page HTML, most-likely-relevant first. */
-export function sameOriginScripts(html: string, pageUrl: URL): string[] {
-  const urls = new Set<string>();
-  for (const m of html.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)) {
-    try {
-      const u = new URL(m[1], pageUrl);
-      if (u.origin === pageUrl.origin && (u.pathname.endsWith('.js') || u.pathname.endsWith('.mjs'))) {
-        urls.add(u.toString());
-      }
-    } catch {
-      /* skip unparseable src */
-    }
-  }
-  const all = [...urls];
-  const ranked = [...all.filter((u) => PRIORITY.test(u)), ...all.filter((u) => !PRIORITY.test(u))];
-  return ranked.slice(0, MAX_SCRIPTS);
-}
-
-async function fetchText(url: string): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), BUNDLE_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, { redirect: 'manual', signal: controller.signal, headers: { 'user-agent': UA } });
-    if (!res.ok) return ''; // skip redirects / errors
-    return (await res.text()).slice(0, MAX_BYTES);
-  } catch {
-    return '';
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 export async function POST(request: Request): Promise<Response> {
   const limited = rateLimitResponse(request.headers);
@@ -80,7 +41,7 @@ export async function POST(request: Request): Promise<Response> {
 
   // Scan the HTML (inline scripts + window.__ENV blobs live here) and the bundles.
   const all: SecretFinding[] = [...findSecrets(html)];
-  const scripts = sameOriginScripts(html, finalUrl);
+  const scripts = scriptUrls(html, finalUrl);
   const bundles = await Promise.all(scripts.map(fetchText));
   for (const b of bundles) all.push(...findSecrets(b));
 
@@ -99,7 +60,7 @@ export async function POST(request: Request): Promise<Response> {
       try {
         const entryHtml = await fetchText(new URL(entry, finalUrl).toString());
         if (!entryHtml) continue;
-        const entryScripts = sameOriginScripts(entryHtml, finalUrl).filter((s) => !scripts.includes(s));
+        const entryScripts = scriptUrls(entryHtml, finalUrl).filter((s) => !scripts.includes(s));
         const entryBundles = await Promise.all(entryScripts.slice(0, 12).map(fetchText));
         const entryCode = [entryHtml, ...entryBundles].join('\n');
         discovered = discoverSupabase(entryCode);
