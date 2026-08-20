@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { safeFetch, UA } from '@/lib/scan/fetch';
-import { analyzeVisibility } from '@/lib/scan/visibility';
+import { analyzeVisibility, isJsOnlyShell } from '@/lib/scan/visibility';
+import { findSmuggledText } from '@/lib/scan/smuggling';
 
 export const runtime = 'nodejs';
 
@@ -70,10 +71,17 @@ export async function POST(request: Request): Promise<Response> {
     fetchIfPresent(new URL('/llms.txt', finalUrl).toString()),
   ]);
 
-  return NextResponse.json(
-    analyzeVisibility(
-      { html, robotsTxt, hasRobots: robotsTxt.length > 0, hasSitemap: sitemap.length > 0, hasLlmsTxt: llms.length > 0 },
-      finalUrl.host,
-    ),
+  const result = analyzeVisibility(
+    { html, robotsTxt, hasRobots: robotsTxt.length > 0, hasSitemap: sitemap.length > 0, hasLlmsTxt: llms.length > 0 },
+    finalUrl.host,
   );
+
+  return NextResponse.json({
+    ...result,
+    // The hidden-instruction scan rides along here because this route already
+    // holds the served HTML AND the JS-only-shell verdict. That verdict is
+    // passed through as limitedCoverage so the report can refuse to show a
+    // clean pass for a page whose content we never actually saw.
+    smuggling: findSmuggledText(html, isJsOnlyShell(html)),
+  });
 }

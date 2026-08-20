@@ -11,6 +11,7 @@ import type { PrivacyResult } from './privacy';
 import type { EmailAuthResult } from './email-auth';
 import type { TransportResult } from './transport';
 import type { VisibilityResult } from './visibility';
+import type { SmugglingResult } from './smuggling';
 import type { LibsScanResult } from './libs';
 import { worstGrade } from './grade';
 
@@ -80,6 +81,7 @@ export interface ReportInputs {
   transport?: TransportResult | null;
   visibility?: VisibilityResult | null;
   libraries?: LibsScanResult | null;
+  smuggling?: SmugglingResult | null;
 }
 
 /** Column names that usually mean personal or payment data. */
@@ -338,6 +340,56 @@ export function combineReport(inp: ReportInputs): Report {
     // drag the security headline (nor be dragged by it).
     const checks: CheckItem[] = pr.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail }));
     categories.push({ key: 'privacy', group: 'privacy', label: 'EU privacy (GDPR signals)', grade: pr.grade, summary: pr.summary, checks });
+  }
+
+  // Hidden instructions aimed at AI readers. Its own category because the
+  // question it answers is not "are you exposed" but "does your page say
+  // something to a machine that it does not say to a person".
+  if (inp.smuggling) {
+    const sm = inp.smuggling;
+    const n = sm.payloads.length;
+    if (n > 0) issueCount += n;
+    const checks: CheckItem[] = [
+      {
+        label: 'No invisible instructions aimed at AI readers',
+        pass: n === 0,
+        // Evidence first: the decoded text IS the finding. Nobody should have to
+        // take our word for it.
+        detail:
+          n > 0
+            ? `${n} hidden instruction(s) found in your page, invisible in a browser but readable by an AI. First one decodes to: "${sm.payloads[0].decoded.slice(0, 120)}"`
+            : sm.limitedCoverage
+              ? 'none in the served HTML — but most of this page is drawn in the browser, which we do not run, so this is partial'
+              : 'none — nothing in your page is hidden from human readers but visible to machines',
+        severity: 'high',
+      },
+    ];
+    if (sm.invisibleControls > 0) {
+      checks.push({
+        label: 'Zero-width characters present',
+        // Never a failure: ZWJ is required in emoji and in Arabic, Persian and
+        // Indic scripts, and a stray BOM is a build artefact, not an attack.
+        pass: true,
+        detail: `${sm.invisibleControls} zero-width or bidi character(s) — normal in emoji and in Arabic/Persian/Indic text, so reported, not graded`,
+      });
+    }
+    // A definite verdict moves the security headline; "limited coverage"
+    // contributes nothing rather than being counted as a pass.
+    if (n > 0) securityGrades.push('F');
+    else if (!sm.limitedCoverage) securityGrades.push('A');
+    categories.push({
+      key: 'smuggling',
+      group: 'security',
+      label: 'Hidden AI instructions',
+      grade: n > 0 ? 'F' : sm.limitedCoverage ? null : 'A',
+      summary:
+        n > 0
+          ? `${n} instruction(s) hidden in your page, visible only to AI`
+          : sm.limitedCoverage
+            ? 'Limited coverage — this page is drawn in the browser'
+            : 'Nothing hidden from humans but readable by machines ✅',
+      checks,
+    });
   }
 
   if (inp.visibility) {

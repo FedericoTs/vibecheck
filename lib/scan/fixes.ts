@@ -15,6 +15,8 @@ import type { Report, CheckItem } from './report';
 
 /** Guidance keyed by category, used when nothing more specific matches. */
 const CATEGORY_FIX: Record<string, string> = {
+  smuggling:
+    'Find and delete the hidden characters. They are in the Unicode Tags block (U+E0000–U+E007F), which renders as nothing in a browser but is readable by an AI — so search your source and CMS content for that range rather than looking for it on the page. Then work out how it got there: content pasted from an untrusted source, a user-submitted field rendered without sanitising, or a compromised dependency that injects markup. Strip codepoints in that range on input, and re-check anywhere users or integrations can write text into your pages.',
   libs:
     'Upgrade this library to the patched version noted above (bump it in package.json or your CDN URL and redeploy). If it came in as a transitive dependency, update the parent package or add an override, then rebuild so the fixed version ships in your bundle.',
   supabase:
