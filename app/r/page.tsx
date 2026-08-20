@@ -1,13 +1,16 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-type SP = Promise<{ g?: string; i?: string }>;
+type SP = Promise<{ g?: string; i?: string; p?: string }>;
 
-function parse(sp: { g?: string; i?: string }) {
+function parse(sp: { g?: string; i?: string; p?: string }) {
   const g = (sp.g ?? 'F').toUpperCase();
   const grade = ['A', 'B', 'C', 'D', 'F'].includes(g) ? g : 'F';
   const issues = Math.max(0, Math.min(999, parseInt(sp.i ?? '0', 10) || 0));
-  return { grade, issues };
+  // How many checks passed. It is what makes a grade mean something, so it
+  // travels with the link and is shown on both the card and this page.
+  const passed = Math.max(0, Math.min(999, parseInt(sp.p ?? '0', 10) || 0));
+  return { grade, issues, passed };
 }
 
 function tone(grade: string): string {
@@ -17,13 +20,15 @@ function tone(grade: string): string {
 }
 
 export async function generateMetadata({ searchParams }: { searchParams: SP }): Promise<Metadata> {
-  const { grade, issues } = parse(await searchParams);
+  const { grade, issues, passed } = parse(await searchParams);
   const title = `This app scored ${grade} on vibecheck`;
   const description =
     issues > 0
       ? `${issues} security issue${issues === 1 ? '' : 's'} found on an AI-built app. Check yours — it's free.`
-      : "Check yours — it's free.";
-  const og = `/api/og?g=${grade}&i=${issues}`;
+      : passed > 0
+        ? `${passed} checks passed — no public exposure found. Check yours — it's free.`
+        : "Check yours — it's free.";
+  const og = `/api/og?g=${grade}&i=${issues}&p=${passed}`;
   return {
     title,
     description,
@@ -36,7 +41,7 @@ export async function generateMetadata({ searchParams }: { searchParams: SP }): 
 }
 
 export default async function ResultPage({ searchParams }: { searchParams: SP }) {
-  const { grade, issues } = parse(await searchParams);
+  const { grade, issues, passed } = parse(await searchParams);
   const issueText =
     issues === 0 ? 'No issues found' : `${issues} issue${issues === 1 ? '' : 's'} found`;
 
@@ -58,6 +63,10 @@ export default async function ResultPage({ searchParams }: { searchParams: SP })
         <div className="flex flex-col justify-center p-5">
           <p className="kicker mb-1">Their score</p>
           <p className="font-display text-lg leading-snug">{issueText}</p>
+          {/* `passed` counts every check; `issues` counts failing SECURITY
+              checks only — so they do not sum to a total and must not be
+              presented as if they did. */}
+          {passed > 0 && <p className="mt-1 font-mono text-xs text-faint">{passed} checks passed</p>}
         </div>
       </div>
 

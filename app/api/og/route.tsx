@@ -95,22 +95,41 @@ export function GET(req: Request): ImageResponse {
   }
 
   const issues = Math.max(0, Math.min(999, parseInt(searchParams.get('i') ?? '0', 10) || 0));
+  const passed = Math.max(0, Math.min(999, parseInt(searchParams.get('p') ?? '0', 10) || 0));
   const color = GRADE_COLOR[raw];
   const issueText = issues === 0 ? 'No issues found' : `${issues} issue${issues === 1 ? '' : 's'} found`;
 
   return new ImageResponse(
     (
       <Shell>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div style={{ display: 'flex', width: 14, height: 300, background: color, marginRight: 56 }} />
-          <div style={{ fontSize: 340, fontWeight: 800, color, lineHeight: 1, marginRight: 60 }}>{raw}</div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: 60, fontWeight: 600 }}>{issueText}</div>
-            <div style={{ fontSize: 30, color: MUTED, marginTop: 10 }}>on an AI-built app</div>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <div style={{ display: 'flex', width: 14, height: 232, background: color, marginRight: 48 }} />
+            <div style={{ fontSize: 258, fontWeight: 800, color, lineHeight: 1, marginRight: 52 }}>{raw}</div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontSize: 56, fontWeight: 600 }}>{issueText}</div>
+              {/*
+                A bare letter is not a credential — it says nothing about what
+                was examined, so it is neither credible nor worth posting. The
+                number of checks that actually passed is what turns the grade
+                into evidence, and it is the same figure shown in the report.
+              */}
+              {/* One template literal, not `{passed} checks passed` — satori
+                  counts that as two child nodes and rejects any div holding
+                  more than one without an explicit display. */}
+              {passed > 0 && <div style={{ fontSize: 34, marginTop: 12 }}>{`${passed} checks passed`}</div>}
+              <div style={{ fontSize: 26, color: MUTED, marginTop: 10 }}>on an AI-built app</div>
+            </div>
+          </div>
+          {/* What the grade stands for. Static: it describes the TOOL, never the
+              scanned app, so it discloses nothing about the target. */}
+          <div style={{ display: 'flex', fontSize: 21, color: MUTED, marginTop: 26, lineHeight: 1.4 }}>
+            database exposure · keys in the bundle · dev builds shipped live · source maps · hidden
+            text aimed at AI · vulnerable libraries · headers
           </div>
         </div>
       </Shell>
     ),
-    { width: 1200, height: 630 },
+    { width: 1200, height: 630, headers: { 'cache-control': OG_CACHE } },
   );
 }

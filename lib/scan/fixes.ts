@@ -15,6 +15,8 @@ import type { Report, CheckItem } from './report';
 
 /** Guidance keyed by category, used when nothing more specific matches. */
 const CATEGORY_FIX: Record<string, string> = {
+  scaffold:
+    'Replace the generator default title and description with your own. In Next.js App Router set `metadata` in app/layout.tsx; in Vite or CRA edit index.html; in Astro/Nuxt/SvelteKit set them in the root layout. Write what the app actually is in ~60 characters of title and ~150 of description — this is the text Google, ChatGPT and every link preview use to describe you, and right now it says the template name.',
   devserver:
     'Deploy a production build instead of the development one. Run the build step for your framework and serve its output (`next build` then `next start`, or `vite build` then serve `dist/`) rather than `next dev` / `vite`. If you are behind a process manager or container, check that the start command is the build-and-serve one and not the dev script, and that NODE_ENV is production. If the deployed files are a copied snapshot of a dev session, rebuild from source — the dev client and unhashed chunks should not exist in a production bundle at all.',
   smuggling:

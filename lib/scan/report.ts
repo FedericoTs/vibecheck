@@ -13,6 +13,7 @@ import type { TransportResult } from './transport';
 import type { VisibilityResult } from './visibility';
 import type { SmugglingResult } from './smuggling';
 import type { DevServerResult } from './devserver';
+import type { ScaffoldResult } from './scaffold';
 import type { LibsScanResult } from './libs';
 import { worstGrade } from './grade';
 
@@ -84,6 +85,7 @@ export interface ReportInputs {
   libraries?: LibsScanResult | null;
   smuggling?: SmugglingResult | null;
   devServer?: DevServerResult | null;
+  scaffold?: ScaffoldResult | null;
 }
 
 /** Column names that usually mean personal or payment data. */
@@ -434,6 +436,38 @@ export function combineReport(inp: ReportInputs): Report {
             ? 'Limited coverage — this page is drawn in the browser'
             : 'Nothing hidden from humans but readable by machines ✅',
       checks,
+    });
+  }
+
+  // Scaffold defaults sit in VISIBILITY, not security: the harm is that Google,
+  // ChatGPT and every link preview are told the app is called "Create Next App".
+  // Every existing audit ticks the box because a title is present — this is the
+  // gap between present and correct.
+  if (inp.scaffold && inp.scaffold.verdict !== 'unknown') {
+    const sc = inp.scaffold;
+    const hit = sc.finding;
+    const graded = !!hit && hit.severity === 'warning';
+    if (graded) issueCount += 1;
+    categories.push({
+      key: 'scaffold',
+      group: 'visibility',
+      label: 'Your app has its own name',
+      grade: graded ? 'D' : 'A',
+      summary: hit
+        ? `Still shipping the ${hit.generator} default`
+        : 'The page carries its own title and description ✅',
+      checks: [
+        {
+          label: 'Title and description are yours, not the template default',
+          // An informational hit (a published template demo, where the default
+          // is correct) is reported without being counted against them.
+          pass: !graded,
+          detail: hit
+            ? `${sc.reason}. Matched exactly: ${hit.fields.join('; ')}`
+            : sc.reason,
+          severity: 'medium',
+        },
+      ],
     });
   }
 

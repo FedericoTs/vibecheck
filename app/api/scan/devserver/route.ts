@@ -3,6 +3,7 @@ import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { safeFetch, UA } from '@/lib/scan/fetch';
 import { scanDevServer, type Probe } from '@/lib/scan/devserver';
+import { detectScaffold } from '@/lib/scan/scaffold';
 
 export const runtime = 'nodejs';
 
@@ -51,16 +52,16 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const { response, url } = await safeFetch(target);
     const html = (await response.text()).slice(0, MAX_BYTES);
-    const result = await scanDevServer(
-      {
-        html,
-        status: response.status,
-        contentType: response.headers.get('content-type') ?? '',
-        url,
-      },
-      probe,
-    );
-    return NextResponse.json(result);
+    const doc = {
+      html,
+      status: response.status,
+      contentType: response.headers.get('content-type') ?? '',
+      url,
+    };
+    const result = await scanDevServer(doc, probe);
+    // The scaffold check needs exactly the same document, so it rides along
+    // here rather than costing the user a second fetch of the same page.
+    return NextResponse.json({ ...result, scaffold: detectScaffold(doc) });
   } catch {
     return NextResponse.json({ error: 'Could not reach that URL' }, { status: 502 });
   }
