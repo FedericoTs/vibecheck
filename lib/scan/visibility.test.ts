@@ -7,6 +7,9 @@ import {
   blockedAiAgents,
   analyzeVisibility,
   type VisibilityFacts,
+  fleschReadingEase,
+  headingStructure,
+  altTextCoverage,
 } from './visibility';
 
 const facts = (over: Partial<VisibilityFacts> = {}): VisibilityFacts => ({
@@ -92,13 +95,47 @@ describe('analyzeVisibility', () => {
   it('a well-built page passes everything', () => {
     const r = analyzeVisibility(
       facts({
-        html: '<html><head><link rel="canonical" href="https://x.com/"><script type="application/ld+json">{}</script></head><body>' +
-          'Plenty of real server-rendered content. '.repeat(20) + '</body></html>',
+        html: '<html><head><link rel="canonical" href="https://x.com/"><script type="application/ld+json">{}</script></head><body><h1>Welcome</h1>' +
+          'The team ships fast and keeps things simple. Users love how clear it feels. '.repeat(12) + '</body></html>',
         hasSitemap: true,
       }),
       'app.com',
     );
     expect(r.failed).toHaveLength(0);
     expect(r.grade).toBe('A');
+  });
+});
+
+describe('content quality — readability, headings, alt text', () => {
+  it('Flesch: easy prose scores high, dense prose low, thin content is null', () => {
+    const easy = 'The cat sat on the mat. It was a warm day. The sun was up. We ran to the park. It was fun. '.repeat(3);
+    const dense = 'Notwithstanding the aforementioned considerations, the multifaceted implementation necessitates comprehensive evaluation of the interdependent architectural methodologies. '.repeat(4);
+    expect(fleschReadingEase(easy)!).toBeGreaterThan(70);
+    expect(fleschReadingEase(dense)!).toBeLessThan(40);
+    expect(fleschReadingEase('too short')).toBe(null);
+  });
+
+  it('headings: flags none, multiple H1, and skipped levels', () => {
+    expect(headingStructure('<h1>Title</h1><h2>Sub</h2>')).toEqual({ h1Count: 1, hasHeadings: true, skips: false });
+    expect(headingStructure('<h1>A</h1><h1>B</h1>').h1Count).toBe(2);
+    expect(headingStructure('<h1>A</h1><h3>skip</h3>').skips).toBe(true);
+    expect(headingStructure('<p>no headings</p>').hasHeadings).toBe(false);
+  });
+
+  it('alt text: counts content images with alt, ignores decorative', () => {
+    const html = '<img src="a.jpg" alt="a cat"><img src="b.jpg"><img src="c.jpg" alt="" role="presentation">';
+    const a = altTextCoverage(html);
+    expect(a.total).toBe(2); // decorative one excluded
+    expect(a.withAlt).toBe(1);
+  });
+
+  it('surfaces the three as low-severity checks in the report', () => {
+    const html = '<html><body><h1>A</h1><h1>B</h1>' + 'Some real content here. '.repeat(20) + '<img src="x.jpg"></body></html>';
+    const r = analyzeVisibility({ html, robotsTxt: '', hasRobots: false, hasSitemap: true, hasLlmsTxt: false }, 'app.com');
+    const keys = r.checks.map((c) => c.key);
+    expect(keys).toContain('readability');
+    expect(keys).toContain('headings');
+    expect(keys).toContain('alt-text');
+    expect(r.checks.find((c) => c.key === 'headings')!.pass).toBe(false); // two H1s
   });
 });

@@ -40,7 +40,7 @@ export interface VisibilityResult {
 const AI_AGENTS = ['GPTBot', 'ClaudeBot', 'anthropic-ai', 'PerplexityBot', 'Google-Extended', 'CCBot', 'Bytespider'];
 
 /** Visible text once markup, scripts and styles are stripped. */
-export function visibleTextLength(html: string): number {
+export function visibleText(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -48,7 +48,61 @@ export function visibleTextLength(html: string): number {
     .replace(/<[^>]+>/g, ' ')
     .replace(/&[a-z]+;/gi, ' ')
     .replace(/\s+/g, ' ')
-    .trim().length;
+    .trim();
+}
+
+export function visibleTextLength(html: string): number {
+  return visibleText(html).length;
+}
+
+// ── content quality: readability, headings, alt text ─────────────────
+
+/** Rough syllable count — enough for a Flesch estimate, not linguistics. */
+export function countSyllables(word: string): number {
+  const w = word.toLowerCase().replace(/[^a-z]/g, '');
+  if (w.length === 0) return 0;
+  if (w.length <= 3) return 1;
+  const trimmed = w.replace(/(?:[^laeiouy]es|[^laeiouy]ed|[^laeiouy]e)$/, '').replace(/^y/, '');
+  const groups = trimmed.match(/[aeiouy]{1,2}/g);
+  return groups ? groups.length : 1;
+}
+
+/**
+ * Flesch Reading Ease (0-100; higher = easier). Below ~30 is college-graduate
+ * dense, which both readers and the models summarising your page struggle with.
+ * Returns null when there is too little prose to score meaningfully.
+ */
+export function fleschReadingEase(text: string): number | null {
+  const words = text.split(/\s+/).filter((w) => /[a-z]/i.test(w));
+  const sentences = (text.match(/[.!?]+(\s|$)/g) || []).length || 1;
+  if (words.length < 60) return null; // not enough content to score
+  const syllables = words.reduce((n, w) => n + countSyllables(w), 0);
+  const score = 206.835 - 1.015 * (words.length / sentences) - 84.6 * (syllables / words.length);
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+/** One H1, no skipped levels, some headings at all. */
+export function headingStructure(html: string): { h1Count: number; hasHeadings: boolean; skips: boolean } {
+  const levels = [...html.matchAll(/<h([1-6])[\s>]/gi)].map((m) => parseInt(m[1], 10));
+  const present = new Set(levels);
+  const max = levels.length ? Math.max(...levels) : 0;
+  let skips = false;
+  for (let lvl = 2; lvl <= max; lvl++) {
+    if (present.has(lvl) && !present.has(lvl - 1)) {
+      skips = true;
+      break;
+    }
+  }
+  return { h1Count: levels.filter((l) => l === 1).length, hasHeadings: levels.length > 0, skips };
+}
+
+/** How many CONTENT images carry alt text (decorative/hidden ones are excluded). */
+export function altTextCoverage(html: string): { total: number; withAlt: number } {
+  const imgs = [...html.matchAll(/<img\b[^>]*>/gi)]
+    .map((m) => m[0])
+    .filter((t) => !/role=["']presentation["']|aria-hidden=["']true["']/i.test(t));
+  const withAlt = imgs.filter((t) => /\balt\s*=\s*["'][^"']+["']/i.test(t)).length;
+  return { total: imgs.length, withAlt };
 }
 
 /**
@@ -134,6 +188,55 @@ export function analyzeVisibility(facts: VisibilityFacts, host = ''): Visibility
       severity: 'low',
       detail: facts.hasSitemap ? '/sitemap.xml is served' : 'no /sitemap.xml — crawlers must guess your URLs',
     },
+    // ── content quality (SEO + how well an assistant can summarise you) ─
+    (() => {
+      const flesch = fleschReadingEase(visibleText(html));
+      return {
+        key: 'readability',
+        label: 'Readable prose (Flesch)',
+        pass: flesch === null ? true : flesch >= 30,
+        severity: 'low' as const,
+        detail:
+          flesch === null
+            ? 'too little text to score'
+            : flesch >= 30
+              ? `Flesch ${flesch} — reasonably readable`
+              : `Flesch ${flesch} — very dense (college-graduate level); hard for readers and for models summarising the page`,
+      };
+    })(),
+    (() => {
+      const h = headingStructure(html);
+      const ok = h.hasHeadings && h.h1Count === 1 && !h.skips;
+      return {
+        key: 'headings',
+        label: 'Clear heading structure (one H1)',
+        pass: ok,
+        severity: 'low' as const,
+        detail: !h.hasHeadings
+          ? 'no headings found — assistants and search use them to understand the page'
+          : h.h1Count === 0
+            ? 'no H1 — every page should have exactly one'
+            : h.h1Count > 1
+              ? `${h.h1Count} H1s — a page should have exactly one`
+              : h.skips
+                ? 'heading levels skip (e.g. H1 → H3), which confuses document structure'
+                : 'one H1, levels in order',
+      };
+    })(),
+    (() => {
+      const a = altTextCoverage(html);
+      const pct = a.total === 0 ? 100 : Math.round((a.withAlt / a.total) * 100);
+      return {
+        key: 'alt-text',
+        label: 'Images have alt text',
+        pass: a.total === 0 || pct >= 80,
+        severity: 'low' as const,
+        detail:
+          a.total === 0
+            ? 'no content images to describe'
+            : `${a.withAlt}/${a.total} images have alt text (${pct}%)${pct < 80 ? ' — add alt for accessibility and image search' : ''}`,
+      };
+    })(),
     // ── reported, never graded ────────────────────────────────────────
     {
       key: 'ai-crawler-policy',
