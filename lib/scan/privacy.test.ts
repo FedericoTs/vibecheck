@@ -44,6 +44,20 @@ describe('detectors', () => {
     expect(hasPrivacyLink('<a href="/datenschutz">Datenschutz</a>')).toBe(true);
     expect(hasPrivacyLink('<a href="/about">About</a>')).toBe(false);
   });
+
+  it('finds privacy on a COMBINED terms-and-privacy link (the common small-app pattern)', () => {
+    // The href gives nothing away, so this has to be caught on the link text.
+    expect(hasPrivacyLink('<a href="/legal">terms &amp; privacy</a>')).toBe(true);
+    expect(hasPrivacyLink('<a href="/legal" class="x y">Terms and Privacy</a>')).toBe(true);
+    expect(hasPrivacyLink('<a href="/tos"><span>Terms &amp; Privacy</span></a>')).toBe(true);
+    expect(hasPrivacyLink('<a href="/legal">informativa sulla privacy</a>')).toBe(true);
+  });
+
+  it('does NOT count the word privacy in ordinary body copy', () => {
+    // Matching must stay scoped to anchors, or marketing prose triggers a pass.
+    expect(hasPrivacyLink('<p>We respect your privacy and never sell data.</p>')).toBe(false);
+    expect(hasPrivacyLink('<h2>Privacy first</h2><a href="/about">About</a>')).toBe(false);
+  });
 });
 
 describe('analyzePrivacy', () => {

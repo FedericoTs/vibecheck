@@ -30,6 +30,11 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: await siteBaseUrl(),
     title: TITLE,
     description,
+    // "./" resolves against the CURRENT route, so every page gets its own
+    // canonical rather than all of them claiming to be the homepage. We flag a
+    // missing canonical on other people's apps; ours was missing because the
+    // homepage is a client component and cannot export metadata itself.
+    alternates: { canonical: "./" },
     openGraph: {
       title: TITLE,
       description,
@@ -48,11 +53,39 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+/**
+ * Structured data so assistants don't have to infer what this page is — the
+ * same check we run on other people's apps. Every claim here is literally true:
+ * no aggregateRating, no review counts, no invented awards. It is a free
+ * (price 0) open-source web tool, and that is all this says.
+ */
+function structuredData(base: string): string {
+  const json = {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name: "vibecheck",
+    alternateName: "is my app leaking?",
+    url: base,
+    description,
+    applicationCategory: "SecurityApplication",
+    operatingSystem: "Any (runs in the browser)",
+    isAccessibleForFree: true,
+    offers: { "@type": "Offer", price: "0", priceCurrency: "EUR" },
+    license: "https://opensource.org/licenses/MIT",
+    codeRepository: "https://github.com/FedericoTs/vibecheck",
+    creator: { "@type": "Person", name: "Federico Sciuca" },
+  };
+  // Escape "<" so the payload can never terminate the script element early.
+  return JSON.stringify(json).replace(/</g, "\\u003c");
+}
+
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const base = (await siteBaseUrl()).origin;
   return (
     <html lang="en" className={`${display.variable} ${mono.variable} h-full antialiased`}>
       <body className="min-h-full">
         {children}
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData(base) }} />
         <Analytics />
       </body>
     </html>

@@ -63,7 +63,28 @@ const TRACKING_COOKIES = /^(_ga|_gid|_gat|_fbp|_fbc|_hj[A-Za-z]*|_gcl_au|__utm[a
 /** Consent-manager fingerprints (CMPs + hand-rolled banners). */
 const CONSENT_SIGNALS = /cookiebot|onetrust|cookieyes|termly|iubenda|klaro|osano|usercentrics|cookie-?consent|cookieconsent|didomi|quantcast|consentmanager|(we use|this (site|website) uses) cookies|accept (all )?cookies|manage (cookie )?preferences/i;
 
-const PRIVACY_LINK = /href=["'][^"']*(privacy|datenschutz|privacidad|confidentialit|informativa)[^"']*["']|>\s*(privacy(\s+policy)?|datenschutz|cookie policy)\s*</i;
+/** The privacy word in the languages we recognise, for both link forms below. */
+const PRIVACY_WORD = 'privacy|datenschutz|privacidad|confidentialit|informativa';
+
+/**
+ * A privacy policy is linked if EITHER the href points at a privacy-ish path,
+ * OR an anchor's own text mentions privacy.
+ *
+ * The anchor-text form must tolerate the very common combined page — a single
+ * `<a href="/legal">terms &amp; privacy</a>` — so it matches the word ANYWHERE
+ * in the link text rather than requiring the text to be exactly "privacy".
+ * Requiring an exact match reported "no privacy policy link found" on sites that
+ * plainly had one (this tool's own footer among them), which is cry-wolf on a
+ * GDPR check. Matching is still scoped INSIDE an anchor, so ordinary body copy
+ * like "we respect your privacy" does not count. One level of nested markup
+ * (`<a><span>Privacy</span></a>`) is allowed, and the text run is length-bounded
+ * to keep the regex linear.
+ */
+const PRIVACY_LINK = new RegExp(
+  `href=["'][^"']*(?:${PRIVACY_WORD})[^"']*["']` +
+    `|<a\\b[^>]*>(?:\\s*<[^>]{0,200}>)?[^<]{0,200}\\b(?:${PRIVACY_WORD})`,
+  'i',
+);
 
 /** Parse cookie names out of one or more Set-Cookie header values. */
 export function cookieNames(setCookie: string | undefined): string[] {
