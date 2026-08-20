@@ -1031,15 +1031,21 @@ export default function Home() {
             regulatory-crosswalk <span className="text-faint">— open dataset mapping NIS2 / DORA / ISO 27001 ↗</span>
           </a>
         </div>
-        {/* Featured-on badge. Kept a plain SSR-rendered link (visible, not JS-only) with the
-            provided href/src unchanged. Hardened without breaking it: referrerPolicy stops the
-            third-party image request from leaking a visitor's page URL to divvlaunches.com, and
-            lazy/async loading means their host being slow or down never blocks or shifts our page. */}
-        <div className="mt-8">
+        <div className="mt-5 flex flex-wrap items-center gap-4">
+          <p className="kicker text-faint">
+            free · open source · no signup · MIT ·{' '}
+            <a href={X_URL} className="-my-1 inline-block py-1 transition-colors hover:text-ink">
+              @federico_sciuca
+            </a>
+          </p>
+          {/* Featured-on badge — inline, right-aligned. SSR-rendered (visible, not JS-only),
+              href/src unchanged, no forbidden rel. referrerPolicy stops the third-party image
+              from leaking a visitor's page URL to divvlaunches.com; lazy/async so their host
+              being slow or down never blocks or shifts our layout. */}
           <a
             href="https://divvlaunches.com"
             aria-label="Featured on DivvLaunches"
-            className="inline-block opacity-80 transition-opacity hover:opacity-100"
+            className="ml-auto inline-block shrink-0"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -1054,12 +1060,6 @@ export default function Home() {
             />
           </a>
         </div>
-        <p className="mt-5 kicker text-faint">
-          free · open source · no signup · MIT ·{' '}
-          <a href={X_URL} className="-my-1 inline-block py-1 transition-colors hover:text-ink">
-            @federico_sciuca
-          </a>
-        </p>
       </footer>
     </main>
   );
