@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fixFor, failingChecks, secondaryChecks, buildFixPrompt } from './fixes';
+import { fixFor, failingChecks, secondaryChecks, buildFixPrompt, buildRepoFixPrompt } from './fixes';
 import type { Report, ReportCategory } from './report';
 
 const cat = (over: Partial<ReportCategory>): ReportCategory => ({
@@ -142,5 +142,52 @@ describe('the prompt covers every shipped check, not just the old ones', () => {
   it('still says clean when nothing at all failed', () => {
     const clean = report([cat({ checks: [{ label: 'CSP', pass: true }] })]);
     expect(buildFixPrompt(clean)).toMatch(/came back clean/);
+  });
+});
+
+describe('buildRepoFixPrompt', () => {
+  const fix = (f: { kind: string; label: string }) => (f.kind === 'secret' ? 'Rotate and move it server-side.' : 'Update it.');
+
+  it('leads each item with the FILE PATH — the whole advantage of scanning a repo', () => {
+    const p = buildRepoFixPrompt(
+      {
+        ref: 'me/app',
+        filesScanned: 42,
+        findings: [{ kind: 'secret', path: 'src/lib/db.ts', label: 'Stripe secret key', detail: 'sk_live_…', severity: 'critical' }],
+      },
+      fix,
+    );
+    expect(p).toContain('File: src/lib/db.ts');
+    expect(p).toContain('Open the file named in each item');
+    expect(p).toContain('Rotate and move it server-side.');
+  });
+
+  it('says a committed secret is not fixed by deleting it', () => {
+    const p = buildRepoFixPrompt(
+      { ref: 'me/app', filesScanned: 1, findings: [{ kind: 'secret', label: 'AWS key', severity: 'critical' }] },
+      fix,
+    );
+    expect(p).toMatch(/ROTATE/);
+    expect(p).toMatch(/history/i);
+  });
+
+  it('escalates a malicious package above everything else', () => {
+    const p = buildRepoFixPrompt(
+      { ref: 'me/app', filesScanned: 1, findings: [{ kind: 'dependency', label: 'MALICIOUS package foo', severity: 'critical' }] },
+      fix,
+    );
+    expect(p).toMatch(/treated as compromised/);
+  });
+
+  it('never invites the agent to delete a failing test', () => {
+    const p = buildRepoFixPrompt(
+      { ref: 'me/app', filesScanned: 1, findings: [{ kind: 'dockerfile', label: 'Runs as root', severity: 'high' }] },
+      fix,
+    );
+    expect(p).toContain('Do not weaken or delete a test');
+  });
+
+  it('says so plainly when there is nothing to fix', () => {
+    expect(buildRepoFixPrompt({ ref: 'me/app', filesScanned: 60, findings: [] }, fix)).toMatch(/came back clean/);
   });
 });

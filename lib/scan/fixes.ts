@@ -164,6 +164,60 @@ export function secondaryChecks(report: Report): Array<{ category: string; check
  * Explicit about rotation because that is the step people skip: moving a key
  * server-side does not undo the fact that it was already public.
  */
+/**
+ * The repo-mode equivalent, and it can be BETTER than the URL one: every repo
+ * finding carries the file it came from, so the agent is told where to look
+ * instead of being asked to go hunting.
+ *
+ * Takes the fix text as a callback because the repo guidance already lives with
+ * the repo UI — this assembles, it does not duplicate.
+ */
+export function buildRepoFixPrompt(
+  input: {
+    ref: string;
+    filesScanned: number;
+    findings: Array<{ kind: string; path?: string; label: string; detail?: string; severity: string }>;
+  },
+  fixFor: (f: { kind: string; label: string }) => string,
+): string {
+  if (input.findings.length === 0) {
+    return `A security scan of ${input.ref} came back clean across ${input.filesScanned} source files — no changes needed.`;
+  }
+
+  const lines: string[] = [];
+  lines.push(
+    `I ran a security scan on my repository ${input.ref} and it found ${input.findings.length} issue${input.findings.length === 1 ? '' : 's'}. ` +
+      'Please fix them one at a time, starting with the first. Open the file named in each item, make the change there, and briefly explain what you changed and why.',
+  );
+  lines.push('');
+
+  input.findings.forEach((f, i) => {
+    lines.push(`${i + 1}. [${f.severity}] ${f.label}`);
+    // The path is the whole advantage of scanning a repo — lead with it.
+    if (f.path) lines.push(`   File: ${f.path}`);
+    if (f.detail) lines.push(`   What the scan saw: ${f.detail}`);
+    lines.push(`   How to fix: ${fixFor(f)}`);
+    lines.push('');
+  });
+
+  const hasSecret = input.findings.some((f) => f.kind === 'secret');
+  const hasMalicious = input.findings.some((f) => /malicious/i.test(f.label));
+  lines.push('Important:');
+  if (hasSecret) {
+    lines.push(
+      '- A secret committed to git is not fixed by deleting it. ROTATE the credential first — it is in the history, and on every clone and fork. Then remove it from the working tree, load it from an environment variable, and add the file to .gitignore.',
+    );
+  }
+  if (hasMalicious) {
+    lines.push(
+      '- A package flagged as malicious means every credential present on any machine that ran an install should be treated as compromised. Remove the package, then rotate those credentials before anything else.',
+    );
+  }
+  lines.push('- Do not weaken or delete a test to make a finding go away.');
+  lines.push('- After the changes, push and re-run the scan to confirm.');
+  return lines.join('\n');
+}
+
 export function buildFixPrompt(report: Report, url?: string): string {
   const issues = failingChecks(report);
   const secondary = secondaryChecks(report);

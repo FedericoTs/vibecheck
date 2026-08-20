@@ -8,7 +8,7 @@ import { scanFirebase, extractCollections, firebaseConfigFromText, type Firebase
 import { unzipSync } from 'fflate';
 import { extractScannableText, analyzeBinaryText } from '@/lib/scan/binary';
 import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
-import { buildFixPrompt, fixFor } from '@/lib/scan/fixes';
+import { buildFixPrompt, buildRepoFixPrompt, fixFor } from '@/lib/scan/fixes';
 import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals, CrawlerMatrix } from '@/components/report-visuals';
 import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
@@ -172,6 +172,32 @@ const REPO_SEV: Record<RepoFinding['severity'], string> = {
 };
 
 function RepoReport({ result, onReset }: { result: RepoScanResult; onReset: () => void }) {
+  const [promptCopied, setPromptCopied] = useState(false);
+  const [badgeMdCopied, setBadgeMdCopied] = useState(false);
+  // A repo scan reads the default branch at one moment, so the badge is stamped.
+  const repoBadgeDate = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+  function copyPrompt(): void {
+    track('repo_fix_prompt_copied', { grade: result.grade, issues: result.findings.length });
+    const text = buildRepoFixPrompt(
+      { ref: result.ref, filesScanned: result.filesScanned, findings: result.findings },
+      (f) => repoFix(f as RepoFinding),
+    );
+    navigator.clipboard?.writeText(text).then(() => {
+      setPromptCopied(true);
+      setTimeout(() => setPromptCopied(false), 2200);
+    });
+  }
+
+  function copyBadgeMd(): void {
+    const origin = window.location.origin;
+    const md = `[![vibecheck — no issues found in the repo, ${repoBadgeDate}](${origin}/badge?g=${result.grade}&d=${encodeURIComponent(repoBadgeDate)})](${origin})`;
+    navigator.clipboard?.writeText(md).then(() => {
+      setBadgeMdCopied(true);
+      setTimeout(() => setBadgeMdCopied(false), 2200);
+    });
+  }
+
   return (
     <section>
       <div className={`border bg-panel ${result.findings.length > 0 ? 'border-danger/40' : 'border-safe/40'}`}>
@@ -217,6 +243,49 @@ function RepoReport({ result, onReset }: { result: RepoScanResult; onReset: () =
         </p>
         <code className="mt-3 block border border-line bg-canvas px-3 py-2 font-mono text-xs text-safe">npx tenant-guard init</code>
       </div>
+
+      {/*
+        The fix prompt, and it beats the URL one: every repo finding carries the
+        file it came from, so the agent is pointed at a path instead of being
+        asked to go looking.
+      */}
+      {result.findings.length > 0 && (
+        <button
+          onClick={copyPrompt}
+          className="mt-6 w-full border border-warn bg-warn/10 px-5 py-3 font-mono text-xs font-medium uppercase tracking-wider text-warn transition hover:bg-warn/20"
+        >
+          {promptCopied
+            ? '✓ copied — paste it into Cursor, Claude Code or your editor'
+            : `⚡ copy the fix prompt (${result.findings.length} issue${result.findings.length === 1 ? '' : 's'}, with file paths)`}
+        </button>
+      )}
+
+      {/* A clean repo earns the same badge a clean URL scan does. Date-stamped,
+          because it describes the default branch at one moment. */}
+      {result.findings.length === 0 && (
+        <div className="mt-6 border border-safe/30 bg-panel p-5">
+          <p className="kicker mb-2 text-safe">Clean scan — show it off</p>
+          <p className="text-sm text-muted">
+            Drop it in your README. It is <span className="text-ink">date-stamped</span> — this reflects the
+            default branch when it was scanned, not a standing promise — and links back so anyone can re-check.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`/badge?g=${result.grade}&d=${encodeURIComponent(repoBadgeDate)}`}
+              alt={`vibecheck — no issues found in the repo, ${repoBadgeDate}`}
+              width={288}
+              height={20}
+            />
+            <button
+              onClick={copyBadgeMd}
+              className="border border-line px-3 py-1.5 font-mono text-xs text-muted transition-colors hover:border-ink hover:text-ink"
+            >
+              {badgeMdCopied ? '✓ markdown copied' : 'copy markdown'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="mt-8 flex flex-wrap gap-3">
         <button onClick={onReset} className="border border-line px-4 py-2 font-mono text-xs text-muted transition-colors hover:border-ink hover:text-ink">
