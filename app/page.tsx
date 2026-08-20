@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { track } from '@vercel/analytics';
 import { scanSupabase } from '@/lib/scan/supabase';
 import { scanFirebase, extractCollections, firebaseConfigFromText, type FirebaseConfig } from '@/lib/scan/firebase';
@@ -769,6 +770,13 @@ export default function Home() {
             database probes in <span className="text-muted">your own browser</span> — we never query
             it, and we store nothing. It only ever reads what any visitor can already reach.
           </p>
+
+          <p className="mt-3 kicker text-faint">
+            Scan apps you own or are authorized to test ·{' '}
+            <Link href="/legal" className="-my-1 inline-block py-1 transition-colors hover:text-ink">
+              terms &amp; privacy
+            </Link>
+          </p>
         </>
       )}
 
@@ -1036,7 +1044,11 @@ export default function Home() {
             free · open source · no signup · MIT ·{' '}
             <a href={X_URL} className="-my-1 inline-block py-1 transition-colors hover:text-ink">
               @federico_sciuca
-            </a>
+            </a>{' '}
+            ·{' '}
+            <Link href="/legal" className="-my-1 inline-block py-1 transition-colors hover:text-ink">
+              terms &amp; privacy
+            </Link>
           </p>
           {/* Featured-on badge — inline, right-aligned. SSR-rendered (visible, not JS-only),
               href/src unchanged, no forbidden rel. referrerPolicy stops the third-party image
