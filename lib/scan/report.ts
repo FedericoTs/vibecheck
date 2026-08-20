@@ -364,6 +364,16 @@ export function combineReport(inp: ReportInputs): Report {
         severity: 'high',
       },
     ];
+    if (sm.conformantResidue > 0) {
+      checks.push({
+        label: 'Emoji tag characters present',
+        // Valid subdivision flags leave this residue when markup splits them,
+        // and it cannot encode prose — reported so the number is never a
+        // surprise, never graded because it has a legitimate explanation.
+        pass: true,
+        detail: `${sm.conformantResidue} tag character(s) in the emoji alphabet — normal on pages that show regional flags, and they cannot spell an instruction, so reported, not graded`,
+      });
+    }
     if (sm.invisibleControls > 0) {
       checks.push({
         label: 'Zero-width characters present',

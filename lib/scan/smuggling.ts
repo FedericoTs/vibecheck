@@ -14,27 +14,37 @@
  * field, a comment, or a copy-pasted block from a poisoned source.
  *
  * ── Why this is deterministic, not a heuristic ─────────────────────────────
- * There is no scoring and no classifier here. Either the bytes are in the Tags
- * block or they are not, and decoding is arithmetic: codepoint − 0xE0000.
+ * There is no scoring and no classifier. Decoding is arithmetic (codepoint −
+ * 0xE0000), and the grading rule is a grammar question with a yes/no answer.
  *
- * The only legitimate use of this block in real text is the RGI emoji tag
- * sequences, and that is a CLOSED SET OF EXACTLY THREE, confirmed against the
- * Unicode data files:
+ * What it does NOT do is grade on the mere PRESENCE of tag characters. The
+ * first version of this check allowlisted the three RGI flags — England,
+ * Scotland, Wales — and treated everything else in the block as smuggled. That
+ * was wrong, and an adversarial review caught it against a live site: UTS #51
+ * Annex C makes valid ANY tag_spec that is a CLDR subdivision_id or 3-digit
+ * region subtag with idStatus regular, deprecated or macroregion — thousands of
+ * sequences, not three. An emoji reference page serving US state flags was
+ * reported as carrying 63 hidden instructions. A false accusation of exactly
+ * the kind this tool exists not to make.
  *
- *   1F3F4 E0067 E0062 E0065 E006E E0067 E007F  flag: England
- *   1F3F4 E0067 E0062 E0073 E0063 E0074 E007F  flag: Scotland
- *   1F3F4 E0067 E0062 E0077 E006C E0073 E007F  flag: Wales
+ * The rule instead keys on the CHARACTER CLASS of what survives after every
+ * structurally valid sequence is stripped:
+ *
+ *   - conformant alphabet (digits 0-9, lowercase a-z, CANCEL TAG) → REPORTED.
+ *     Emoji reference sites publish these legitimately, sometimes split across
+ *     markup so the sequence never appears contiguously in the served bytes.
+ *   - anything else — TAG SPACE, punctuation, or the capitals U+E0041–U+E005A
+ *     that ED-14a explicitly reserves — → GRADED. These cannot occur in any
+ *     conformant sequence, and real smuggled prose is full of them.
+ *
+ * That asymmetry is the whole design: a check that stays silent on ambiguous
+ * lowercase runs and only fires on the by-spec impossible.
  *
  * Sources (retrieved 2026-08-20):
  *   https://www.unicode.org/Public/UNIDATA/Blocks.txt   → "E0000..E007F; Tags"
  *   https://unicode.org/Public/emoji/latest/emoji-sequences.txt
- *                                                       → RGI_Emoji_Tag_Sequence
- *   Annex C of UTS #51 describes the sequence structure.
- *
- * Because that allowlist is an exact, finite set rather than a shape, a
- * correctly-rendered Welsh flag cannot produce a finding, and nothing else in
- * ordinary text uses this block at all. No benign framework, CDN or WAF emits
- * tag characters.
+ *   UTS #51 ED-14a (tag_spec grammar; reserved capitals) and Annex C (the
+ *   CLDR subdivision constraint) — https://www.unicode.org/reports/tr51/
  *
  * ── What is deliberately NOT graded ────────────────────────────────────────
  * Zero-width and bidirectional characters are counted and reported, never
@@ -53,14 +63,46 @@ const TAG_PRINTABLE_END = 0xe007e;
 const TAG_CANCEL = 0xe007f;
 
 /**
- * The complete set of legitimate tag sequences in Unicode, as codepoint arrays.
- * Verified against emoji-sequences.txt — there are exactly three.
+ * Codepoints that CAN legitimately appear inside a conformant emoji tag
+ * sequence, per UTS #51 Annex C: digits 0-9 and lowercase a-z, plus the
+ * terminator.
+ *
+ * Everything else in the Tags block is by-spec impossible in a conformant
+ * sequence — TAG SPACE, all punctuation, and U+E0041–U+E005A, which ED-14a
+ * explicitly reserves ("they are not used currently and are reserved for future
+ * extensions"). That distinction is what this check grades on.
  */
-const RGI_TAG_SEQUENCES: number[][] = [
-  [0x1f3f4, 0xe0067, 0xe0062, 0xe0065, 0xe006e, 0xe0067, 0xe007f], // England
-  [0x1f3f4, 0xe0067, 0xe0062, 0xe0073, 0xe0063, 0xe0074, 0xe007f], // Scotland
-  [0x1f3f4, 0xe0067, 0xe0062, 0xe0077, 0xe006c, 0xe0073, 0xe007f], // Wales
-];
+function isConformantTagChar(cp: number): boolean {
+  return (
+    (cp >= 0xe0030 && cp <= 0xe0039) || // TAG DIGIT ZERO .. NINE
+    (cp >= 0xe0061 && cp <= 0xe007a) || // TAG LATIN SMALL LETTER A .. Z
+    cp === TAG_CANCEL
+  );
+}
+
+/**
+ * A structurally valid emoji tag sequence: the black-flag base, a run of
+ * digits/lowercase, and the CANCEL TAG terminator, within the 32-codepoint
+ * limit Annex C imposes.
+ *
+ * This is deliberately NOT the RGI list. Annex C makes valid any tag_spec that
+ * is a CLDR subdivision_id or 3-digit region subtag with idStatus regular,
+ * deprecated or macroregion — thousands of them, not the three that are
+ * Recommended for General Interchange. An earlier version of this check
+ * allowlisted only the RGI three and consequently reported 63 "hidden
+ * instructions" on an emoji reference page serving perfectly valid US state
+ * flags. Matching the grammar rather than the recommended set is the fix.
+ */
+const VALID_TAG_SEQUENCE = /\u{1F3F4}[\u{E0030}-\u{E0039}\u{E0061}-\u{E007A}]{2,30}\u{E007F}/gu;
+
+/**
+ * Variation Selectors Supplement. A single selector after a base character is a
+ * legitimate Ideographic Variation Sequence in CJK text, but selectors do not
+ * stack — so a RUN of two or more is non-conformant by construction, and is the
+ * documented way to smuggle arbitrary bytes through an emoji.
+ */
+const VS_SUPPLEMENT_START = 0xe0100;
+const VS_SUPPLEMENT_END = 0xe01ef;
 
 /** Zero-width and bidi controls: reported for transparency, never graded. */
 const INVISIBLE_CONTROLS = /[​‌‍⁠﻿‪-‮⁦-⁩]/gu;
@@ -75,10 +117,20 @@ export interface SmuggledPayload {
 }
 
 export interface SmugglingResult {
-  /** Decoded hidden instructions. Non-empty means a hard finding. */
+  /**
+   * Hidden text that CANNOT be a conformant Unicode sequence — it uses spaces,
+   * punctuation, capitals or stacked variation selectors. This is the graded
+   * finding, and it has no legitimate surface.
+   */
   payloads: SmuggledPayload[];
-  /** Legitimate emoji tag sequences skipped — proves the allowlist ran. */
+  /** Structurally valid emoji tag sequences skipped — proves the grammar ran. */
   emojiSequencesSkipped: number;
+  /**
+   * Leftover tag characters that are still within the conformant alphabet
+   * (lowercase and digits). Emoji reference sites publish these legitimately,
+   * often split across markup, so they are REPORTED and never graded.
+   */
+  conformantResidue: number;
   /** Zero-width / bidi characters present. Reported only. */
   invisibleControls: number;
   /**
@@ -118,19 +170,16 @@ export function decodeTagEntities(text: string): string {
   });
 }
 
-/** Strip the three legitimate emoji tag sequences. Returns the count removed. */
+/**
+ * Strip every structurally valid emoji tag sequence, whether or not it is one
+ * of the three RGI flags. Returns how many were removed.
+ */
 export function removeEmojiTagSequences(text: string): { text: string; removed: number } {
-  let out = text;
   let removed = 0;
-  for (const seq of RGI_TAG_SEQUENCES) {
-    const literal = seq.map((cp) => String.fromCodePoint(cp)).join('');
-    let idx = out.indexOf(literal);
-    while (idx !== -1) {
-      removed++;
-      out = out.slice(0, idx) + out.slice(idx + literal.length);
-      idx = out.indexOf(literal);
-    }
-  }
+  const out = text.replace(VALID_TAG_SEQUENCE, () => {
+    removed++;
+    return '';
+  });
   return { text: out, removed };
 }
 
@@ -165,19 +214,51 @@ export function findSmuggledText(html: string, limitedCoverage = false): Smuggli
   const { text, removed } = removeEmojiTagSequences(decoded);
 
   const payloads: SmuggledPayload[] = [];
+  let conformantResidue = 0;
   let run: number[] = [];
   let runStart = 0;
   let i = 0;
 
   const flush = (): void => {
-    if (run.length) {
+    if (!run.length) {
+      return;
+    }
+    // THE GRADING RULE. Presence of tag characters proves nothing — valid
+    // subdivision flags leave residue when markup splits them apart. What
+    // cannot occur in any conformant sequence is a character outside the
+    // digits/lowercase/terminator alphabet: a space, punctuation, or one of the
+    // capitals ED-14a reserves. Real smuggled prose is full of exactly those.
+    const nonConformant = run.filter((cp) => !isConformantTagChar(cp));
+    if (nonConformant.length > 0) {
       const value = decodeRun(run);
-      // A lone stray tag character carries no message; require real content.
       if (value.trim().length >= 2) {
         payloads.push({ decoded: value, codepoints: run.length, context: visibleContext(text, runStart) });
       }
-      run = [];
+    } else {
+      conformantResidue += run.length;
     }
+    run = [];
+  };
+
+  // Runs of stacked variation selectors, decoded separately: a selector is
+  // legitimate only immediately after a base character, and they do not stack,
+  // so two or more in a row is non-conformant by construction.
+  let vsRun: number[] = [];
+  let vsStart = 0;
+  const flushVs = (): void => {
+    if (vsRun.length >= 2) {
+      const bytes = vsRun.map((cp) => cp - VS_SUPPLEMENT_START + 16);
+      const printable = bytes
+        .filter((b) => b >= 0x20 && b <= 0x7e)
+        .map((b) => String.fromCharCode(b))
+        .join('');
+      payloads.push({
+        decoded: printable.trim().length >= 2 ? printable : `${vsRun.length} hidden bytes`,
+        codepoints: vsRun.length,
+        context: visibleContext(text, vsStart),
+      });
+    }
+    vsRun = [];
   };
 
   for (const ch of text) {
@@ -185,16 +266,24 @@ export function findSmuggledText(html: string, limitedCoverage = false): Smuggli
     if (cp >= TAG_BASE && cp <= TAG_CANCEL) {
       if (!run.length) runStart = i;
       run.push(cp);
+      flushVs();
+    } else if (cp >= VS_SUPPLEMENT_START && cp <= VS_SUPPLEMENT_END) {
+      if (!vsRun.length) vsStart = i;
+      vsRun.push(cp);
+      flush();
     } else {
       flush();
+      flushVs();
     }
     i += ch.length;
   }
   flush();
+  flushVs();
 
   return {
     payloads,
     emojiSequencesSkipped: removed,
+    conformantResidue,
     invisibleControls: (text.match(INVISIBLE_CONTROLS) ?? []).length,
     limitedCoverage,
   };
