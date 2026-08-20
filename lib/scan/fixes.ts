@@ -15,6 +15,8 @@ import type { Report, CheckItem } from './report';
 
 /** Guidance keyed by category, used when nothing more specific matches. */
 const CATEGORY_FIX: Record<string, string> = {
+  devserver:
+    'Deploy a production build instead of the development one. Run the build step for your framework and serve its output (`next build` then `next start`, or `vite build` then serve `dist/`) rather than `next dev` / `vite`. If you are behind a process manager or container, check that the start command is the build-and-serve one and not the dev script, and that NODE_ENV is production. If the deployed files are a copied snapshot of a dev session, rebuild from source — the dev client and unhashed chunks should not exist in a production bundle at all.',
   smuggling:
     'Find and delete the hidden characters. They are in the Unicode Tags block (U+E0000–U+E007F), which renders as nothing in a browser but is readable by an AI — so search your source and CMS content for that range rather than looking for it on the page. Then work out how it got there: content pasted from an untrusted source, a user-submitted field rendered without sanitising, or a compromised dependency that injects markup. Strip codepoints in that range on input, and re-check anywhere users or integrations can write text into your pages.',
   libs:

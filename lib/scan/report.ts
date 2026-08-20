@@ -12,6 +12,7 @@ import type { EmailAuthResult } from './email-auth';
 import type { TransportResult } from './transport';
 import type { VisibilityResult } from './visibility';
 import type { SmugglingResult } from './smuggling';
+import type { DevServerResult } from './devserver';
 import type { LibsScanResult } from './libs';
 import { worstGrade } from './grade';
 
@@ -82,6 +83,7 @@ export interface ReportInputs {
   visibility?: VisibilityResult | null;
   libraries?: LibsScanResult | null;
   smuggling?: SmugglingResult | null;
+  devServer?: DevServerResult | null;
 }
 
 /** Column names that usually mean personal or payment data. */
@@ -344,6 +346,35 @@ export function combineReport(inp: ReportInputs): Report {
     // drag the security headline (nor be dragged by it).
     const checks: CheckItem[] = pr.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail }));
     categories.push({ key: 'privacy', group: 'privacy', label: 'EU privacy (GDPR signals)', grade: pr.grade, summary: pr.summary, checks });
+  }
+
+  // Development-mode build artifacts. Worded carefully: a static mirror of a
+  // dev-served page reproduces these bytes exactly, so we report what is being
+  // SERVED and never diagnose what is RUNNING.
+  if (inp.devServer && inp.devServer.verdict !== 'unknown') {
+    const ds = inp.devServer;
+    const found = ds.verdict === 'dev-artifacts';
+    if (found) issueCount += 1;
+    securityGrades.push(found ? 'F' : 'A');
+    categories.push({
+      key: 'devserver',
+      group: 'security',
+      label: 'Production build',
+      grade: found ? 'F' : 'A',
+      summary: found
+        ? 'Development build artifacts are being served publicly'
+        : 'This is a production build ✅',
+      checks: [
+        {
+          label: 'Serving a production build, not a development one',
+          pass: !found,
+          detail: found
+            ? `${ds.reason}. A development build ships unminified source, prints file contents in stack traces, and has no CSP. Evidence: ${ds.signals[0]?.evidence ?? 'dev-only asset paths'}`
+            : ds.reason,
+          severity: 'high',
+        },
+      ],
+    });
   }
 
   // Hidden instructions aimed at AI readers. Its own category because the

@@ -19,6 +19,7 @@ import type { EmailAuthResult } from '@/lib/scan/email-auth';
 import type { TransportResult } from '@/lib/scan/transport';
 import type { VisibilityResult } from '@/lib/scan/visibility';
 import type { SmugglingResult } from '@/lib/scan/smuggling';
+import type { DevServerResult } from '@/lib/scan/devserver';
 import type { RepoScanResult, RepoFinding } from '@/lib/scan/repo';
 import { toCycloneDX } from '@/lib/scan/sbom';
 import { gradeSecrets, type SecretsScanResult } from '@/lib/scan/secrets';
@@ -334,9 +335,10 @@ export default function Home() {
     const privacyP = appUrl.trim() ? postScan<PrivacyResult>('/api/scan/privacy', 'EU privacy') : Promise.resolve(null);
     const emailP = appUrl.trim() ? postScan<EmailAuthResult>('/api/scan/email', 'email spoofing') : Promise.resolve(null);
     const transportP = appUrl.trim() ? postScan<TransportResult>('/api/scan/transport', 'HTTPS & redirects') : Promise.resolve(null);
+    const devServerP = appUrl.trim() ? postScan<DevServerResult>('/api/scan/devserver', 'production build') : Promise.resolve(null);
     const visibilityP = appUrl.trim() ? postScan<VisibilityResult & { smuggling?: SmugglingResult }>('/api/scan/visibility', 'AI & search visibility') : Promise.resolve(null);
     try {
-      const [hdr, paths, secrets, fundamentals, routes, ai, privacy, email, transport, visibility] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, routesP, aiP, privacyP, emailP, transportP, visibilityP]);
+      const [hdr, paths, secrets, fundamentals, routes, ai, privacy, email, transport, visibility, devServer] = await Promise.all([headersP, pathsP, secretsP, fundamentalsP, routesP, aiP, privacyP, emailP, transportP, visibilityP, devServerP]);
       if (appUrl.trim()) {
         if (limited) {
           // The app is fine — we are. Saying "could not reach your app" here
@@ -367,7 +369,7 @@ export default function Home() {
       ]);
       if (secrets?.firebase) setAutoDetected(true);
 
-      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals, privacy, email, transport, visibility, libraries: secrets?.libraries ?? null, smuggling: visibility?.smuggling ?? null };
+      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals, privacy, email, transport, visibility, libraries: secrets?.libraries ?? null, smuggling: visibility?.smuggling ?? null, devServer };
       setInputs(base);
 
       // Lighthouse is slow (10-30s) — render the security card now, fill it in when
