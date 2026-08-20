@@ -9,7 +9,7 @@ import { unzipSync } from 'fflate';
 import { extractScannableText, analyzeBinaryText } from '@/lib/scan/binary';
 import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
 import { buildFixPrompt, fixFor } from '@/lib/scan/fixes';
-import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix } from '@/components/report-visuals';
+import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges } from '@/components/report-visuals';
 import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
 import type { RoutesScanResult } from '@/lib/scan/routes';
@@ -916,6 +916,15 @@ export default function Home() {
               <p className="kicker mb-3">
                 Visibility, fundamentals &amp; performance <span className="text-faint">· separate from the security grade</span>
               </p>
+              {inputs?.lighthouse?.scores && (
+                <div className="mb-3 border border-line bg-panel p-5">
+                  <div className="mb-5 flex items-baseline justify-between">
+                    <p className="kicker">Google Lighthouse</p>
+                    <p className="font-mono text-xs text-faint">0–100 · real PageSpeed scores</p>
+                  </div>
+                  <LighthouseGauges scores={inputs.lighthouse.scores} />
+                </div>
+              )}
               <div className="space-y-3">
                 {report.categories.some((c) => c.group === 'basics' || c.group === 'performance') && (
                   <CategoryList categories={report.categories.filter((c) => c.group === 'basics' || c.group === 'performance')} />

@@ -1,5 +1,6 @@
 import type { Grade } from '@/lib/scan/types';
 import { SEVERITY_ORDER, severityCounts, type Report, type ReportCategory, type Severity } from '@/lib/scan/report';
+import type { LighthouseScores } from '@/lib/scan/lighthouse';
 
 /** grade -> letter/border colour classes, shared across the report. */
 export function tone(grade: Grade | null): string {
@@ -160,6 +161,64 @@ export function CategoryMatrix({ categories }: { categories: ReportCategory[] })
               <p className={`font-mono text-[11px] ${fails > 0 ? 'text-danger' : 'text-faint'}`}>{fails > 0 ? `${fails} to fix` : 'all clear'}</p>
             </div>
             <PassBar passed={c.checks.length - fails} total={c.checks.length} className="mt-2" />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const LH_ITEMS: Array<[keyof LighthouseScores, string]> = [
+  ['performance', 'Performance'],
+  ['seo', 'SEO'],
+  ['accessibility', 'Accessibility'],
+  ['bestPractices', 'Best practices'],
+];
+// Static class names so Tailwind keeps them; dynamic `stroke-${x}` would be purged.
+const LH_STROKE = { safe: 'stroke-safe', warn: 'stroke-warn', danger: 'stroke-danger' } as const;
+const LH_TEXT = { safe: 'text-safe', warn: 'text-warn', danger: 'text-danger' } as const;
+const lhTone = (s: number): 'safe' | 'warn' | 'danger' => (s >= 90 ? 'safe' : s >= 50 ? 'warn' : 'danger');
+
+/**
+ * PageSpeed-style score rings for the Lighthouse categories — the 0-100 gauge
+ * people expect from web-quality tooling. Colour follows Google's bands
+ * (0-49 red, 50-89 amber, 90-100 green). Reported, never in the security headline.
+ */
+export function LighthouseGauges({ scores }: { scores: LighthouseScores }) {
+  const items = LH_ITEMS.map(([k, label]) => ({ label, score: scores[k] })).filter(
+    (x): x is { label: string; score: number } => x.score != null,
+  );
+  if (items.length === 0) return null;
+  const size = 96;
+  const stroke = 8;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  return (
+    <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-4">
+      {items.map(({ label, score }) => {
+        const tone = lhTone(score);
+        return (
+          <div key={label} className="flex flex-col items-center">
+            <div className="relative" style={{ width: size, height: size }}>
+              <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
+                <circle cx={size / 2} cy={size / 2} r={r} fill="none" className="stroke-line" strokeWidth={stroke} />
+                <circle
+                  cx={size / 2}
+                  cy={size / 2}
+                  r={r}
+                  fill="none"
+                  className={`${LH_STROKE[tone]} transition-all duration-700 ease-out`}
+                  strokeWidth={stroke}
+                  strokeLinecap="round"
+                  strokeDasharray={circ}
+                  strokeDashoffset={circ * (1 - score / 100)}
+                />
+              </svg>
+              <div className={`absolute inset-0 flex items-center justify-center font-mono text-xl font-semibold ${LH_TEXT[tone]}`}>
+                {score}
+              </div>
+            </div>
+            <p className="kicker mt-2.5 text-center">{label}</p>
           </div>
         );
       })}
