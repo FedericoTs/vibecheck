@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 type SP = Promise<{ g?: string; i?: string }>;
 
@@ -40,9 +41,9 @@ export default async function ResultPage({ searchParams }: { searchParams: SP })
     <main className="mx-auto w-full max-w-2xl px-5 py-10 sm:py-16">
       <div className="mb-14 flex items-center justify-between kicker">
         <span>vibecheck ▸ shared result</span>
-        <a href="/" className="text-faint hover:text-ink transition-colors">
+        <Link href="/" className="text-faint hover:text-ink transition-colors">
           vibecheck ↗
-        </a>
+        </Link>
       </div>
 
       <p className="kicker mb-6">Someone ran a security scan on an AI-built app</p>
@@ -63,18 +64,18 @@ export default async function ResultPage({ searchParams }: { searchParams: SP })
         </h1>
         <p className="mt-4 max-w-md text-muted leading-relaxed">
           Find out in seconds — see exactly what a stranger can read from your app. Runs in your
-          browser, no signup, nothing stored.
+          browser, no signup — your scan is never stored.
         </p>
-        <a
+        <Link
           href="/"
           className="mt-6 inline-block border border-ink bg-ink px-6 py-3 font-mono text-xs font-medium uppercase tracking-wider text-canvas transition hover:bg-transparent hover:text-ink"
         >
           scan your app →
-        </a>
+        </Link>
       </div>
 
       <footer className="mt-16 border-t border-line pt-5 kicker text-faint">
-        free · open source · no signup · no telemetry · MIT
+        free · open source · no signup · no cookies · MIT
       </footer>
     </main>
   );

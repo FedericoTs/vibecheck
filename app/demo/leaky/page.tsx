@@ -64,7 +64,7 @@ getDocs(collection(db, "orders"));`;
       <div className="mt-8 border border-line bg-panel p-5">
         <p className="kicker mb-2">Scan it</p>
         <code className="block break-all border border-line bg-canvas px-3 py-2 font-mono text-xs text-safe">
-          https://vibecheck-gules.vercel.app/demo/leaky
+          https://ismyappleaking.com/demo/leaky
         </code>
         <p className="mt-3 text-sm text-muted">
           Paste that into vibecheck and watch every category light up red.

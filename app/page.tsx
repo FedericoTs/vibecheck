@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { track } from '@vercel/analytics';
 import { scanSupabase } from '@/lib/scan/supabase';
 import { scanFirebase, extractCollections, firebaseConfigFromText, type FirebaseConfig } from '@/lib/scan/firebase';
 import { unzipSync } from 'fflate';
@@ -255,6 +256,17 @@ export default function Home() {
   const [done, setDone] = useState<string[]>([]);
   const report = useMemo(() => (inputs ? combineReport(inputs) : null), [inputs]);
 
+  // Anonymous, cookieless usage analytics. We record the grade, the mode, and the
+  // issue COUNT — never the URL, the key, or the findings — so "we never see your
+  // app" stays literally true; this only tells us how the tool is used.
+  const lastMode = useRef<'url' | 'backend' | 'mobile'>('url');
+  useEffect(() => {
+    if (report) track('scan_completed', { mode: lastMode.current, grade: report.overallGrade, issues: report.issueCount });
+  }, [report]);
+  useEffect(() => {
+    if (repoResult) track('scan_completed', { mode: 'repo', grade: repoResult.grade, issues: repoResult.findings.length });
+  }, [repoResult]);
+
   async function run(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -262,6 +274,7 @@ export default function Home() {
       setError('Enter your app URL, or add a Supabase project to check.');
       return;
     }
+    lastMode.current = 'url';
     setLoading(true);
     setInputs(null);
     setLhLoading(false);
@@ -371,6 +384,7 @@ export default function Home() {
 
   function share() {
     if (!report) return;
+    track('result_shared', { grade: report.overallGrade });
     // A shareable link that unfurls into the OG card — grade + issue count only,
     // never the host, key, or findings.
     const url = `${window.location.origin}/r?g=${report.overallGrade}&i=${report.issueCount}`;
@@ -382,6 +396,7 @@ export default function Home() {
 
   function copyFixPrompt() {
     if (!report) return;
+    track('fix_prompt_copied', { grade: report.overallGrade, issues: report.issueCount });
     // Deterministic prompt — no LLM, so it costs nothing and can't hallucinate a wrong fix.
     navigator.clipboard?.writeText(buildFixPrompt(report, appUrl.trim() || undefined)).then(() => {
       setFixCopied(true);
@@ -424,6 +439,7 @@ export default function Home() {
 
   async function scanBinary(file: File) {
     setError('');
+    lastMode.current = 'mobile';
     setLoading(true);
     setInputs(null);
     setAutoDetected(false);
@@ -459,6 +475,7 @@ export default function Home() {
   async function runBackend(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    lastMode.current = 'backend';
     const hasSupa = sbUrl.trim() && anonKey.trim();
     const fb = fbConfig.trim() ? firebaseConfigFromText(fbConfig) : null;
     if (!hasSupa && !fb) {
@@ -701,7 +718,7 @@ export default function Home() {
                 </p>
               </div>
               <div className="flex items-center justify-between p-4">
-                <span className="kicker text-faint">runs in your browser · stores nothing</span>
+                <span className="kicker text-faint">runs in your browser · we never see your data</span>
                 <button
                   type="submit"
                   disabled={loading}

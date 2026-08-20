@@ -8,7 +8,7 @@ Free · open source · no signup · the database check runs in _your_ browser
 
 <img src="media/vibecheck-scan.gif" alt="vibecheck scanning an app and returning an F security report card" width="720">
 
-**[Try it →](https://vibecheck-gules.vercel.app)**  ·  [See what a failing report looks like](https://vibecheck-gules.vercel.app/demo/leaky)
+**[Try it →](https://ismyappleaking.com)**  ·  [See what a failing report looks like](https://ismyappleaking.com/demo/leaky)
 
 </div>
 
@@ -90,4 +90,4 @@ The scan engine lives in [`lib/scan/`](lib/scan/) as pure, dependency-injected f
 
 ## Licence
 
-MIT · by [Federico Sciuca](https://x.com/federico_sciuca) · free, open source, no signup, no telemetry.
+MIT · by [Federico Sciuca](https://x.com/federico_sciuca) · free, open source, no signup, no cookies.
