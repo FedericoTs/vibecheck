@@ -3,6 +3,8 @@
 import { useState, useMemo } from 'react';
 import { scanSupabase } from '@/lib/scan/supabase';
 import { scanFirebase, extractCollections, firebaseConfigFromText, type FirebaseConfig } from '@/lib/scan/firebase';
+import { unzipSync } from 'fflate';
+import { extractScannableText, analyzeBinaryText } from '@/lib/scan/binary';
 import { combineReport, severityCounts, SEVERITY_ORDER, type ReportInputs, type ReportCategory, type CheckItem, type Report, type Severity } from '@/lib/scan/report';
 import { buildFixPrompt, fixFor } from '@/lib/scan/fixes';
 import type { Grade } from '@/lib/scan/types';
@@ -16,7 +18,7 @@ import type { TransportResult } from '@/lib/scan/transport';
 import type { VisibilityResult } from '@/lib/scan/visibility';
 import type { RepoScanResult, RepoFinding } from '@/lib/scan/repo';
 import { toCycloneDX } from '@/lib/scan/sbom';
-import type { SecretsScanResult } from '@/lib/scan/secrets';
+import { gradeSecrets, type SecretsScanResult } from '@/lib/scan/secrets';
 import type { FundamentalsResult } from '@/lib/scan/fundamentals';
 import type { LighthouseResult } from '@/lib/scan/lighthouse';
 
@@ -528,6 +530,40 @@ export default function Home() {
     }
   }
 
+  async function scanBinary(file: File) {
+    setError('');
+    setLoading(true);
+    setInputs(null);
+    setAutoDetected(false);
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      // .apk / .ipa are ZIPs; the whole thing runs HERE — the binary never leaves the browser.
+      if (!(buf[0] === 0x50 && buf[1] === 0x4b)) {
+        setError('That does not look like an .apk or .ipa (they are ZIP archives).');
+        return;
+      }
+      let files: Record<string, Uint8Array>;
+      try {
+        files = unzipSync(buf, { filter: (f) => !/\.(dex|so|png|jpe?g|webp|gif|ttf|otf|woff2?|dylib|nib|car)$/i.test(f.name) });
+      } catch {
+        setError('Could not unpack that archive — is it a valid .apk / .ipa?');
+        return;
+      }
+      const { text } = extractScannableText(files);
+      const { secrets, discovered, firebase } = analyzeBinaryText(text);
+      const [sb, fb] = await Promise.all([
+        discovered ? scanSupabase(discovered).catch(() => null) : Promise.resolve(null),
+        firebase ? scanFirebase({ config: firebase, collections: extractCollections(text) }).catch(() => null) : Promise.resolve(null),
+      ]);
+      if (discovered || firebase) setAutoDetected(true);
+      setInputs({ supabase: sb, firebase: fb, secrets: gradeSecrets(secrets, 'your app') });
+    } catch {
+      setError('Could not read that file.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function runBackend(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -756,6 +792,21 @@ export default function Home() {
                   placeholder='paste your firebaseConfig (projectId, apiKey, storageBucket)'
                   className="w-full resize-none bg-transparent font-mono text-base text-ink placeholder-faint outline-none sm:text-xs"
                 />
+              </div>
+              <div className="border-b border-line p-4">
+                <label className="kicker block mb-2">…or upload your app (.apk / .ipa)</label>
+                <input
+                  type="file"
+                  accept=".apk,.ipa,application/zip,application/vnd.android.package-archive"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) scanBinary(f);
+                  }}
+                  className="w-full font-mono text-xs text-muted file:mr-3 file:border file:border-line file:bg-canvas file:px-3 file:py-1.5 file:font-mono file:text-xs file:text-ink hover:file:border-ink"
+                />
+                <p className="mt-2 text-xs leading-relaxed text-faint">
+                  We unzip it and scan the JS bundle for secrets + backend config <span className="text-muted">in your browser</span> — the file never leaves your device. Works for React&nbsp;Native / Expo / Flutter apps.
+                </p>
               </div>
               <div className="flex items-center justify-between p-4">
                 <span className="kicker text-faint">runs in your browser · stores nothing</span>
