@@ -5,6 +5,7 @@ import { safeFetch, UA } from '@/lib/scan/fetch';
 import { findSecrets, gradeSecrets, isSourceMap, sourcesFromMap, countPublicGoogleKeys, type SecretFinding } from '@/lib/scan/secrets';
 import { discoverSupabase } from '@/lib/scan/discover';
 import { discoverFirebase, extractCollections } from '@/lib/scan/firebase';
+import { scanLibraries } from '@/lib/scan/libs';
 
 export const runtime = 'nodejs';
 
@@ -147,6 +148,7 @@ export async function POST(request: Request): Promise<Response> {
     ...gradeSecrets(findings, finalUrl.host),
     sourceMaps: { exposed: exposedMaps, checked: mapTargets.length > 0 },
     publicGoogleKeys: countPublicGoogleKeys(allCode),
+    libraries: scanLibraries(allCode, finalUrl.host),
     discovered,
     firebase,
     firebaseCollections,

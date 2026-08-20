@@ -11,6 +11,7 @@ import type { PrivacyResult } from './privacy';
 import type { EmailAuthResult } from './email-auth';
 import type { TransportResult } from './transport';
 import type { VisibilityResult } from './visibility';
+import type { LibsScanResult } from './libs';
 import { worstGrade } from './grade';
 
 export type CategoryGroup = 'security' | 'privacy' | 'visibility' | 'basics' | 'performance';
@@ -78,6 +79,7 @@ export interface ReportInputs {
   email?: EmailAuthResult | null;
   transport?: TransportResult | null;
   visibility?: VisibilityResult | null;
+  libraries?: LibsScanResult | null;
 }
 
 /** Column names that usually mean personal or payment data. */
@@ -235,6 +237,21 @@ export function combineReport(inp: ReportInputs): Report {
       });
     }
     categories.push({ key: 'secrets', group: 'security', label: 'Exposed secrets', grade: s.grade, summary: s.summary, checks });
+  }
+  if (inp.libraries && (inp.libraries.detected > 0 || inp.libraries.findings.length > 0)) {
+    const lb = inp.libraries;
+    const checks: CheckItem[] = lb.findings.map((f) => ({
+      label: `${f.library} ${f.version} — ${f.cves[0]}${f.cves.length > 1 ? ` +${f.cves.length - 1} more` : ''}`,
+      pass: false,
+      severity: f.severity,
+      detail: `${f.summary} Patched in ${f.fixedIn}.`,
+    }));
+    if (lb.findings.length === 0) {
+      checks.push({ label: `${lb.detected} librar${lb.detected === 1 ? 'y' : 'ies'} detected — no known vulnerabilities`, pass: true });
+    }
+    issueCount += lb.findings.length;
+    securityGrades.push(lb.grade);
+    categories.push({ key: 'libs', group: 'security', label: 'Vulnerable libraries', grade: lb.grade, summary: lb.summary, checks });
   }
   if (inp.ai) {
     const a = inp.ai;

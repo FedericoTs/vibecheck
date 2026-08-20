@@ -15,6 +15,8 @@ import type { Report, CheckItem } from './report';
 
 /** Guidance keyed by category, used when nothing more specific matches. */
 const CATEGORY_FIX: Record<string, string> = {
+  libs:
+    'Upgrade this library to the patched version noted above (bump it in package.json or your CDN URL and redeploy). If it came in as a transitive dependency, update the parent package or add an override, then rebuild so the fixed version ships in your bundle.',
   supabase:
     'Enable Row Level Security on this table and add a policy scoping every row to its owner/tenant: `alter table <t> enable row level security;` then `create policy "own rows" on <t> for select using (auth.uid() = user_id);`. RLS is per-command, so add matching policies for insert/update/delete too — a correct select policy still leaves writes open.',
   firebase:

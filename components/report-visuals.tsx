@@ -1,6 +1,6 @@
 import type { Grade } from '@/lib/scan/types';
 import { SEVERITY_ORDER, severityCounts, type Report, type ReportCategory, type Severity } from '@/lib/scan/report';
-import type { LighthouseScores } from '@/lib/scan/lighthouse';
+import type { LighthouseScores, CoreWebVitals } from '@/lib/scan/lighthouse';
 
 /** grade -> letter/border colour classes, shared across the report. */
 export function tone(grade: Grade | null): string {
@@ -222,6 +222,38 @@ export function LighthouseGauges({ scores }: { scores: LighthouseScores }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+const CWV_DOT = { good: 'bg-safe', 'needs-improvement': 'bg-warn', poor: 'bg-danger' } as const;
+const CWV_TEXT = { good: 'text-safe', 'needs-improvement': 'text-warn', poor: 'text-danger' } as const;
+
+/**
+ * Core Web Vitals from the Chrome UX Report — REAL-user field data (trailing 28
+ * days), not lab numbers, so it's what Google actually ranks on. Coloured by
+ * Google's good / needs-improvement / poor thresholds.
+ */
+export function WebVitals({ cwv }: { cwv: CoreWebVitals }) {
+  return (
+    <div className="mt-6 border-t border-line pt-5">
+      <p className="kicker mb-3">
+        Core Web Vitals{' '}
+        <span className="tracking-normal text-faint" style={{ textTransform: 'none' }}>
+          · real users, last 28 days{cwv.origin ? ' · whole domain' : ''}
+        </span>
+      </p>
+      <div className="grid grid-cols-3 gap-3">
+        {cwv.metrics.map((m) => (
+          <div key={m.label} className="border border-line bg-panel px-3 py-3">
+            <div className="flex items-center gap-1.5">
+              <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${CWV_DOT[m.rating]}`} />
+              <span className="kicker">{m.label}</span>
+            </div>
+            <p className={`mt-1.5 font-mono text-lg font-semibold ${CWV_TEXT[m.rating]}`}>{m.display}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

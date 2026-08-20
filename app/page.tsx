@@ -9,7 +9,7 @@ import { unzipSync } from 'fflate';
 import { extractScannableText, analyzeBinaryText } from '@/lib/scan/binary';
 import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
 import { buildFixPrompt, fixFor } from '@/lib/scan/fixes';
-import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges } from '@/components/report-visuals';
+import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals } from '@/components/report-visuals';
 import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
 import type { RoutesScanResult } from '@/lib/scan/routes';
@@ -21,6 +21,7 @@ import type { VisibilityResult } from '@/lib/scan/visibility';
 import type { RepoScanResult, RepoFinding } from '@/lib/scan/repo';
 import { toCycloneDX } from '@/lib/scan/sbom';
 import { gradeSecrets, type SecretsScanResult } from '@/lib/scan/secrets';
+import type { LibsScanResult } from '@/lib/scan/libs';
 import type { FundamentalsResult } from '@/lib/scan/fundamentals';
 import type { LighthouseResult } from '@/lib/scan/lighthouse';
 
@@ -322,6 +323,7 @@ export default function Home() {
             discovered?: { url: string; anonKey: string } | null;
             firebase?: FirebaseConfig | null;
             firebaseCollections?: string[];
+            libraries?: LibsScanResult | null;
           }
         >('/api/scan/secrets', 'secrets')
       : Promise.resolve(null);
@@ -364,7 +366,7 @@ export default function Home() {
       ]);
       if (secrets?.firebase) setAutoDetected(true);
 
-      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals, privacy, email, transport, visibility };
+      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals, privacy, email, transport, visibility, libraries: secrets?.libraries ?? null };
       setInputs(base);
 
       // Lighthouse is slow (10-30s) — render the security card now, fill it in when
@@ -923,6 +925,7 @@ export default function Home() {
                     <p className="font-mono text-xs text-faint">0–100 · real PageSpeed scores</p>
                   </div>
                   <LighthouseGauges scores={inputs.lighthouse.scores} />
+                  {inputs.lighthouse.cwv && <WebVitals cwv={inputs.lighthouse.cwv} />}
                 </div>
               )}
               <div className="space-y-3">
