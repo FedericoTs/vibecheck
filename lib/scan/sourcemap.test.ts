@@ -163,3 +163,37 @@ describe('scanSourceMaps — end to end', () => {
     expect(r.annotated).toBe(0);
   });
 });
+
+describe('REGRESSIONS from adversarial review', () => {
+  it('does not inflate the count with asset stubs or the bundler root', () => {
+    // A real map lists an entry per asset module (a few hundred bytes of
+    // wrapper round a .png) plus a bare runtime root. Counting those as
+    // "your source files" overstated the finding roughly threefold.
+    const { firstParty } = classifySources([
+      'webpack://_N_E/./src/app/page.tsx',
+      'webpack://_N_E/./public/logo.png',
+      'webpack://_N_E/./src/fonts/Inter.woff2',
+      'webpack://_N_E/',
+      'webpack://_N_E/./node_modules/react/index.js',
+    ]);
+    expect(firstParty).toEqual(['webpack://_N_E/./src/app/page.tsx']);
+  });
+
+  it('parses an INDEX map, which has sections and no top-level sources', () => {
+    // Requiring a top-level `sources` array silently dropped these entirely.
+    const indexMap = JSON.stringify({
+      version: 3,
+      sections: [
+        { offset: { line: 0, column: 0 }, map: { version: 3, sources: ['./src/a.ts'], sourcesContent: ['export const a = 1'] } },
+        { offset: { line: 9, column: 0 }, map: { version: 3, sources: ['./src/b.ts'], sourcesContent: ['export const b = 2'] } },
+      ],
+    });
+    const p = parseSourceMap(indexMap)!;
+    expect(p.sources).toEqual(['./src/a.ts', './src/b.ts']);
+    expect(p.hasContent).toBe(true);
+  });
+
+  it('still rejects a sections map that carries no sources at all', () => {
+    expect(parseSourceMap(JSON.stringify({ version: 3, sections: [] }))).toBe(null);
+  });
+});

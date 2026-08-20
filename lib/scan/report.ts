@@ -235,13 +235,17 @@ export function combineReport(inp: ReportInputs): Report {
       // clean pass, which claimed more than we had checked.
       const files = sm.firstPartyFiles ?? 0;
       const sample = (sm.sample ?? []).slice(0, 2).join(', ');
+      // State what is retrievable, never that something "leaked". tldraw and
+      // excalidraw serve working maps deliberately — they are open source. The
+      // bytes are the same; only the owner knows whether that is intended, so
+      // the finding reports the fact and names the fix without alleging harm.
       const detail =
         n > 0
-          ? `${files > 0 ? `${files} of your original source file(s)` : 'your build output'} can be reconstructed` +
+          ? `${files > 0 ? `${files} original source file(s)` : 'your build output'} can be reconstructed from your production bundles` +
             (sample ? ` — including ${sample}` : '') +
-            `. Set productionBrowserSourceMaps to false.`
+            `. Intentional if your code is open source; otherwise set productionBrowserSourceMaps to false.`
           : (sm.annotated ?? 0) > 0
-            ? `your chunks reference source maps, but they are not served — we fetched ${sm.annotated} and none resolved`
+            ? `your chunks reference source maps, but none of the ${sm.annotated} we fetched resolved`
             : 'no source maps are referenced or served';
       checks.push({
         label: 'Source maps not published',

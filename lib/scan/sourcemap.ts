@@ -34,6 +34,18 @@ const VENDOR_MARKERS = [
   /^webpack\/runtime/i,
 ];
 
+/**
+ * Entries that are not source files at all.
+ *
+ * Bundlers emit an entry per asset module — a few hundred bytes of wrapper
+ * around a .png or .woff2 — plus a bare runtime-bootstrap entry. Counting those
+ * as "your original source files" overstates the finding roughly threefold on a
+ * real site, which is severity inflation dressed up as a number.
+ */
+const NOT_SOURCE = /\.(png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf|eot|mp4|webm|wasm)(\?|#|$)/i;
+/** A bare bundler root like `webpack://_N_E/` — a path, not a file. */
+const BARE_ROOT = /^\w+:\/\/[^/]*\/?$/;
+
 export interface SourceMapFinding {
   /** Filename of the chunk that pointed at this map. */
   chunk: string;
@@ -132,22 +144,47 @@ export function parseSourceMap(body: string): ParsedMap | null {
     return null;
   }
   if (typeof json !== 'object' || json === null) return null;
-  const map = json as { version?: unknown; sources?: unknown; sourcesContent?: unknown };
+  const map = json as { version?: unknown; sources?: unknown; sourcesContent?: unknown; sections?: unknown };
   if (map.version !== 3) return null;
-  if (!Array.isArray(map.sources)) return null;
-  const sources = map.sources.filter((s): s is string => typeof s === 'string');
-  const contents = Array.isArray(map.sourcesContent)
-    ? map.sourcesContent.filter((c): c is string => typeof c === 'string' && c.length > 0)
-    : [];
+
+  // An INDEX map carries `sections`, each with its own nested map, and has no
+  // top-level `sources` at all. Requiring `sources` dropped these entirely —
+  // a silent miss on any build that emits one.
+  const parts: Array<{ sources?: unknown; sourcesContent?: unknown }> = Array.isArray(map.sections)
+    ? map.sections
+        .map((s) => (s && typeof s === 'object' ? (s as { map?: unknown }).map : null))
+        .filter((m): m is { sources?: unknown; sourcesContent?: unknown } => !!m && typeof m === 'object')
+    : [map];
+
+  const sources: string[] = [];
+  const contents: string[] = [];
+  for (const part of parts) {
+    if (Array.isArray(part.sources)) {
+      sources.push(...part.sources.filter((s): s is string => typeof s === 'string'));
+    }
+    if (Array.isArray(part.sourcesContent)) {
+      contents.push(...part.sourcesContent.filter((c): c is string => typeof c === 'string' && c.length > 0));
+    }
+  }
+  if (sources.length === 0) return null;
+
   return { sources, hasContent: contents.length > 0, content: contents.join('\n') };
 }
 
-/** Split a map's `sources` into the app's own files and its dependencies. */
+/**
+ * Split a map's `sources` into the app's own source files and everything else.
+ *
+ * "Everything else" is both dependencies AND non-source entries: asset-module
+ * stubs and bare bundler roots. Excluding them keeps the reported file count
+ * honest rather than inflated.
+ */
 export function classifySources(sources: string[]): {
   total: number;
   firstParty: string[];
 } {
-  const firstParty = sources.filter((s) => !VENDOR_MARKERS.some((re) => re.test(s)));
+  const firstParty = sources.filter(
+    (s) => !VENDOR_MARKERS.some((re) => re.test(s)) && !NOT_SOURCE.test(s) && !BARE_ROOT.test(s),
+  );
   return { total: sources.length, firstParty };
 }
 
