@@ -116,6 +116,20 @@ const SIGS: Sig[] = [
 
 const SEV_RANK: Record<LibSeverity, number> = { critical: 4, high: 3, medium: 2, low: 1 };
 
+// CDN / bundler version forms the filename patterns miss: unpkg `jquery@3.4.1`,
+// cdnjs / Google `.../jquery/3.4.1/…`. The lookahead keeps the version a whole
+// segment so we never grab a partial number.
+const CDN: Array<[RegExp, string]> = [
+  [/jquery-ui(?:\.js)?[@/](\d+\.\d+(?:\.\d+)?)(?=[/"'?)\s]|$)/i, 'jQuery UI'],
+  [/jquery(?:\.js)?[@/](\d+\.\d+(?:\.\d+)?)(?=[/"'?)\s]|$)/i, 'jQuery'],
+  [/bootstrap(?:\.js)?[@/](\d+\.\d+(?:\.\d+)?)(?=[/"'?)\s]|$)/i, 'Bootstrap'],
+  [/lodash(?:\.js)?[@/](\d+\.\d+\.\d+)(?=[/"'?)\s]|$)/i, 'Lodash'],
+  [/moment(?:\.js)?[@/](\d+\.\d+\.\d+)(?=[/"'?)\s]|$)/i, 'Moment.js'],
+  [/angular(?:\.js)?[@/](1\.\d+(?:\.\d+)?)(?=[/"'?)\s]|$)/i, 'AngularJS'],
+  [/handlebars(?:\.js)?[@/](\d+\.\d+\.\d+)(?=[/"'?)\s]|$)/i, 'Handlebars'],
+  [/axios(?:\.js)?[@/](\d+\.\d+\.\d+)(?=[/"'?)\s]|$)/i, 'axios'],
+];
+
 /** Numeric version compare. Missing parts count as 0. Returns -1 / 0 / 1. */
 export function cmpVersion(a: string, b: string): number {
   const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
@@ -137,6 +151,16 @@ export function detectLibraries(text: string): Array<{ name: string; version: st
         out.push({ name: sig.name, version: m[1] });
         break; // first hit per library is enough
       }
+    }
+  }
+  // CDN / bundler version forms, only for libraries not already found by filename/banner.
+  const found = new Set(out.map((o) => o.name));
+  for (const [re, name] of CDN) {
+    if (found.has(name)) continue;
+    const m = text.match(re);
+    if (m?.[1]) {
+      out.push({ name, version: m[1] });
+      found.add(name);
     }
   }
   return out;

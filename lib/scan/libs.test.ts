@@ -72,3 +72,21 @@ describe('gradeLibs + scanLibraries', () => {
     expect(r.summary).toMatch(/none with known vulnerabilities/);
   });
 });
+
+describe('CDN / bundler version forms', () => {
+  it('detects unpkg @version', () => {
+    expect(detectLibraries('src="https://unpkg.com/jquery@3.4.1/dist/jquery.min.js"')).toEqual([{ name: 'jQuery', version: '3.4.1' }]);
+  });
+  it('detects cdnjs library-id/version (handlebars.js/4.7.6)', () => {
+    expect(detectLibraries('https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/4.7.6/handlebars.min.js')).toEqual([{ name: 'Handlebars', version: '4.7.6' }]);
+  });
+  it('detects google-hosted /jquery/3.4.1/ path', () => {
+    expect(detectLibraries('https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js')).toEqual([{ name: 'jQuery', version: '3.4.1' }]);
+  });
+  it('does not confuse jquery-ui@ with jquery', () => {
+    expect(detectLibraries('unpkg.com/jquery-ui@1.12.1/dist/')).toEqual([{ name: 'jQuery UI', version: '1.12.1' }]);
+  });
+  it('ignores scoped @angular (Angular 2+, not AngularJS 1.x)', () => {
+    expect(detectLibraries('node_modules/@angular/core@17.0.0/bundles/')).toEqual([]);
+  });
+});

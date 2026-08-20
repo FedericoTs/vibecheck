@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'vibecheck demo — a deliberately leaky app',
@@ -69,12 +70,12 @@ getDocs(collection(db, "orders"));`;
         <p className="mt-3 text-sm text-muted">
           Paste that into vibecheck and watch every category light up red.
         </p>
-        <a
+        <Link
           href="/"
           className="mt-4 inline-block border border-ink bg-ink px-5 py-2.5 font-mono text-xs font-medium uppercase tracking-wider text-canvas transition hover:bg-transparent hover:text-ink"
         >
           ← back to the scanner
-        </a>
+        </Link>
       </div>
 
       {/* The planted "leak" — inert placeholders for the secret scanner to find. */}
@@ -82,6 +83,17 @@ getDocs(collection(db, "orders"));`;
       {/* A Firebase config for a project that does not exist, so the Firebase
           discovery + probe path is exercised without touching anyone's data. */}
       <script dangerouslySetInnerHTML={{ __html: fakeFirebase }} />
+      {/* Outdated libraries with known CVEs — kept inert (type text/plain, so the
+          browser never executes them), but present in the served HTML so the
+          vulnerable-library scanner can detect the versions, exactly like a real app. */}
+      <script
+        type="text/plain"
+        data-vendored=""
+        dangerouslySetInnerHTML={{
+          __html:
+            'https://unpkg.com/jquery@3.4.1/dist/jquery.min.js\nhttps://cdnjs.cloudflare.com/ajax/libs/handlebars.js/4.7.6/handlebars.min.js',
+        }}
+      />
     </main>
   );
 }
