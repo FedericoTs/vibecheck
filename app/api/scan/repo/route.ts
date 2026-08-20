@@ -10,7 +10,7 @@ import {
   type RepoScanResult,
   type RepoFinding,
 } from '@/lib/scan/repo';
-import { lintDockerfile } from '@/lib/scan/dockerfile';
+import { lintDockerfile, isDockerfilePath, looksLikeDockerfile } from '@/lib/scan/dockerfile';
 import {
   parseNpmLock,
   parsePackageJson,
@@ -42,8 +42,38 @@ function authHeaders(): Record<string, string> {
   };
 }
 
+/**
+ * GitHub's rate-limit headers, captured from the last API call.
+ *
+ * Surfaced in the response because it answers two questions honestly that the
+ * scan otherwise answers badly: whether an authenticated token is actually in
+ * use (limit 5000 vs 60 — visible from outside without ever exposing the
+ * token), and whether a thin result is a clean repo or an exhausted quota.
+ * Reporting "we ran out of API budget" is a true statement; silently returning
+ * fewer findings is not.
+ */
+export interface GhRateLimit {
+  limit: number;
+  remaining: number;
+  /** Unix seconds when the window resets. */
+  reset: number;
+  /** limit > 60 means the token was accepted. */
+  authenticated: boolean;
+}
+
+let lastRateLimit: GhRateLimit | null = null;
+
+function captureRateLimit(res: Response): void {
+  const limit = Number(res.headers.get('x-ratelimit-limit'));
+  const remaining = Number(res.headers.get('x-ratelimit-remaining'));
+  const reset = Number(res.headers.get('x-ratelimit-reset'));
+  if (!Number.isFinite(limit) || limit <= 0) return;
+  lastRateLimit = { limit, remaining, reset, authenticated: limit > 60 };
+}
+
 async function fetchJson(url: string): Promise<{ status: number; body: unknown }> {
   const res = await fetch(url, { headers: authHeaders(), signal: AbortSignal.timeout(10_000) });
+  captureRateLimit(res);
   let body: unknown = null;
   try {
     body = await res.json();
@@ -184,13 +214,15 @@ async function scanDependencies(owner: string, repo: string, branch: string, tre
 async function scanDockerfiles(owner: string, repo: string, branch: string, tree: TreeEntry[]): Promise<RepoFinding[]> {
   const paths = tree
     .map((e) => e.path)
-    .filter((p) => /(^|\/)Dockerfile(\.[\w.-]+)?$/i.test(p) && !/node_modules\//.test(p))
+    .filter((p) => isDockerfilePath(p) && !/node_modules\//.test(p))
     .slice(0, 4);
   if (paths.length === 0) return [];
   const loaded = await mapLimit(paths, 4, async (p) => ({ p, content: await fetchRaw(owner, repo, branch, p) }));
   const out: RepoFinding[] = [];
   for (const { p, content } of loaded) {
-    if (!content) continue;
+    // Name says Dockerfile AND content proves it. Without the second gate a
+    // fixture or a doc that merely looks the part gets linted as a container.
+    if (!content || !looksLikeDockerfile(content)) continue;
     for (const f of lintDockerfile(content)) {
       out.push({ kind: 'dockerfile', path: p, label: `${f.label} (${p})`, severity: f.severity, detail: f.detail });
     }
@@ -248,6 +280,7 @@ export async function POST(request: Request): Promise<Response> {
     filesScanned: files.length,
     findings,
     dependencies: depResult.deps,
+    rateLimit: lastRateLimit,
     grade,
     summary:
       findings.length === 0

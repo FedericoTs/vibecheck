@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { lintDockerfile } from './dockerfile';
+import { lintDockerfile, isDockerfilePath, looksLikeDockerfile } from './dockerfile';
 
 const has = (fs: ReturnType<typeof lintDockerfile>, re: RegExp) => fs.some((f) => re.test(f.label));
 
@@ -35,5 +35,43 @@ describe('lintDockerfile', () => {
   it('a well-formed Dockerfile passes clean', () => {
     const df = 'FROM node:20.11.0-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci --omit=dev\nCOPY . .\nUSER node\nCMD ["node","server.js"]';
     expect(lintDockerfile(df)).toEqual([]);
+  });
+});
+
+describe('isDockerfilePath — the filter that graded our own repo F', () => {
+  it('does NOT match this scanner’s own source or its tests', () => {
+    // The original regex matched these case-insensitively as "Dockerfile.<ext>",
+    // so the linter ran over its own pattern definitions and reported four
+    // container findings that do not exist.
+    expect(isDockerfilePath('lib/scan/dockerfile.ts')).toBe(false);
+    expect(isDockerfilePath('lib/scan/dockerfile.test.ts')).toBe(false);
+    expect(isDockerfilePath('app/dockerfile.py')).toBe(false);
+  });
+
+  it('does not match documentation about Dockerfiles', () => {
+    expect(isDockerfilePath('docs/Dockerfile.md')).toBe(false);
+    expect(isDockerfilePath('Dockerfile.txt')).toBe(false);
+  });
+
+  it('matches real Dockerfiles, including the two naming conventions', () => {
+    expect(isDockerfilePath('Dockerfile')).toBe(true);
+    expect(isDockerfilePath('docker/Dockerfile')).toBe(true);
+    expect(isDockerfilePath('Dockerfile.prod')).toBe(true);
+    expect(isDockerfilePath('docker/Dockerfile.dev')).toBe(true);
+    // The old regex MISSED this one entirely.
+    expect(isDockerfilePath('prod.Dockerfile')).toBe(true);
+  });
+});
+
+describe('looksLikeDockerfile — the content gate', () => {
+  it('requires the one mandatory instruction', () => {
+    expect(looksLikeDockerfile('FROM node:20-alpine\nRUN npm ci')).toBe(true);
+    expect(looksLikeDockerfile('# syntax=docker/dockerfile:1\nARG V=20\nFROM node:${V}')).toBe(true);
+    expect(looksLikeDockerfile('  from node:20')).toBe(true); // case + indent tolerant
+  });
+
+  it('rejects a file that merely mentions Dockerfile things', () => {
+    expect(looksLikeDockerfile("const RUN_AS_ROOT = /^USER\s+root/;")).toBe(false);
+    expect(looksLikeDockerfile('This guide explains USER and RUN instructions.')).toBe(false);
   });
 });

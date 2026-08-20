@@ -133,6 +133,13 @@ export interface RepoScanResult {
   findings: RepoFinding[];
   /** Full resolved dependency inventory — powers the downloadable SBOM. */
   dependencies?: Dep[];
+  /**
+   * GitHub's own rate-limit accounting from the last API call. `authenticated`
+   * separates a token-backed 5,000/hr budget from the anonymous 60/hr one — the
+   * only way to confirm from outside that a deployment is really sending a
+   * token, without ever exposing the token itself.
+   */
+  rateLimit?: { limit: number; remaining: number; reset: number; authenticated: boolean } | null;
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
   summary: string;
   error?: string;

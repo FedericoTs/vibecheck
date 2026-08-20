@@ -17,6 +17,44 @@ export interface DockerFinding {
   detail: string;
 }
 
+/**
+ * Extensions that mean the file is source, config or prose — never a Dockerfile.
+ * `dockerfile.ts` is code that deals WITH Dockerfiles; `Dockerfile.md` is
+ * documentation about one.
+ */
+const CODE_OR_DOC_EXT = /\.(tsx?|jsx?|mjs|cjs|py|rb|go|rs|java|php|cs|swift|kts?|mdx?|txt|json|ya?ml|toml|lock|html?|css|s[ac]ss|sh|bat|ps1|snap|map)$/i;
+
+/**
+ * Is this path actually a Dockerfile?
+ *
+ * The original filter was `/(^|\/)Dockerfile(\.[\w.-]+)?$/i`, written to catch
+ * `Dockerfile.prod`. Case-insensitively it also matched `lib/scan/dockerfile.ts`
+ * — this scanner's OWN source — so the linter ran over its own pattern
+ * definitions and reported them as container findings, grading this repo F on
+ * four issues that do not exist. It simultaneously MISSED `prod.Dockerfile`,
+ * a real and common convention.
+ *
+ * A security tool's source is the most predictable false-positive magnet there
+ * is: it necessarily contains every pattern it hunts for. So the rule is
+ * name-based AND content-checked, and errs toward missing a Dockerfile rather
+ * than inventing one.
+ */
+export function isDockerfilePath(path: string): boolean {
+  const base = path.split('/').pop() ?? '';
+  if (CODE_OR_DOC_EXT.test(base)) return false;
+  if (/^dockerfile$/i.test(base)) return true; // Dockerfile
+  if (/^dockerfile\.[\w-]+$/i.test(base)) return true; // Dockerfile.prod
+  return /\.dockerfile$/i.test(base); // prod.Dockerfile
+}
+
+/**
+ * A second, content-level gate. FROM is the only mandatory Dockerfile
+ * instruction, so a file without one is not a Dockerfile whatever it is called.
+ */
+export function looksLikeDockerfile(content: string): boolean {
+  return /^[ \t]*FROM[ \t]+\S/im.test(content);
+}
+
 export function lintDockerfile(content: string): DockerFinding[] {
   const out: DockerFinding[] = [];
   const lines = content
