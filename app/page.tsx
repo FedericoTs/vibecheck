@@ -191,7 +191,7 @@ function RepoReport({ result, onReset }: { result: RepoScanResult; onReset: () =
 
   function copyBadgeMd(): void {
     const origin = window.location.origin;
-    const md = `[![vibecheck — no issues found in the repo, ${repoBadgeDate}](${origin}/badge?g=${result.grade}&d=${encodeURIComponent(repoBadgeDate)})](${origin})`;
+    const md = `[![vibecheck — no issues found in the repo, ${repoBadgeDate}](${origin}/badge?t=repo&g=${result.grade}&d=${encodeURIComponent(repoBadgeDate)})](${origin})`;
     navigator.clipboard?.writeText(md).then(() => {
       setBadgeMdCopied(true);
       setTimeout(() => setBadgeMdCopied(false), 2200);
@@ -272,7 +272,7 @@ function RepoReport({ result, onReset }: { result: RepoScanResult; onReset: () =
           <div className="mt-3 flex flex-wrap items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={`/badge?g=${result.grade}&d=${encodeURIComponent(repoBadgeDate)}`}
+              src={`/badge?t=repo&g=${result.grade}&d=${encodeURIComponent(repoBadgeDate)}`}
               alt={`vibecheck — no issues found in the repo, ${repoBadgeDate}`}
               width={288}
               height={20}

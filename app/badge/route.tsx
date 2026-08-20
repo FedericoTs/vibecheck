@@ -27,7 +27,25 @@ export function GET(request: Request): Response {
   const grade = /^[ABCDF]$/.test(raw) ? raw : 'A';
   const clean = grade === 'A' || grade === 'B';
   const color = clean ? '#3fb950' : grade === 'C' ? '#d29922' : '#f85149';
-  const claim = clean ? 'no public exposure' : grade === 'C' ? 'gaps found' : 'exposed';
+  /**
+   * The claim has to match what was actually scanned. A URL scan observes what
+   * a stranger can reach, so "no public exposure" is true of it. A REPO scan
+   * reads committed code — secrets in the tree, dependency advisories, the
+   * Dockerfile — and never touches a running deployment, so carrying the URL
+   * wording over would assert something that was never checked.
+   */
+  const isRepo = url.searchParams.get('t') === 'repo';
+  const claim = isRepo
+    ? clean
+      ? 'no issues in repo'
+      : grade === 'C'
+        ? 'repo gaps found'
+        : 'repo issues found'
+    : clean
+      ? 'no public exposure'
+      : grade === 'C'
+        ? 'gaps found'
+        : 'exposed';
   // Date is caller-supplied and baked in at copy time (e.g. "Aug 2026"); sanitise hard.
   const date = (url.searchParams.get('d') ?? '').replace(/[^A-Za-z0-9 .,-]/g, '').slice(0, 20).trim();
   const value = date ? `${claim} · ${date}` : claim;
