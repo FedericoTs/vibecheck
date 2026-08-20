@@ -549,8 +549,11 @@ export default function Home() {
         hasSupa ? scanSupabase({ url: sbUrl, anonKey }) : Promise.resolve(null),
         fb ? scanFirebase({ config: fb, collections: extractCollections(fbConfig) }).catch(() => null) : Promise.resolve(null),
       ]);
-      if (!sb && !firebase) setError('Could not reach that backend — double-check the values you pasted.');
-      else setInputs({ supabase: sb, firebase });
+      // A report is only meaningful if at least one probe actually ran. An
+      // errored Supabase alone (e.g. a rotated key) would otherwise render a
+      // misleading grade-C / 0-checks card, so surface its message instead.
+      if ((sb && sb.ok) || firebase) setInputs({ supabase: sb, firebase });
+      else setError(sb && !sb.ok ? sb.error ?? 'Could not reach that backend.' : 'Could not reach that backend — double-check the values you pasted.');
     } finally {
       setLoading(false);
     }
