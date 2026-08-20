@@ -1,33 +1,81 @@
+<div align="center">
+
 # vibecheck
 
-**Is your AI-built app leaking? Paste your app, get a security report card — in seconds.**
+**Is your AI-built app leaking? Paste a URL — get a security report card in seconds.**
 
-AI code generators (Lovable, Bolt, v0, …) ship the same bugs over and over: database
-tables anyone can read, secrets baked into the client bundle, missing security headers.
-vibecheck shows you exactly what a stranger can already see — as a shareable grade.
+Free · open source · no signup · the database check runs in _your_ browser
 
-> Status: **early build.** The flagship Supabase scan works; the rest of the report
-> card is on the roadmap below.
+<img src="media/vibecheck-scan.gif" alt="vibecheck scanning an app and returning an F security report card" width="720">
 
-## The flagship scan — Supabase public-read exposure
+**[Try it →](https://vibecheck-gules.vercel.app)**  ·  [See what a failing report looks like](https://vibecheck-gules.vercel.app/demo/leaky)
 
-The [CVE-2025-48757](https://nvd.nist.gov/vuln/detail/CVE-2025-48757) class: a Supabase
-table with Row Level Security off (or a permissive policy) is readable by **any visitor**
-using the `anon` key — and that key already ships in your app's frontend. vibecheck uses
-*your own* anon key to list every exposed table and how many rows a stranger can pull.
+</div>
 
-**It's a mirror, not an exploit.** The anon key is already public (it's in your client
-bundle); vibecheck only shows you what any visitor can already read. And it runs **100%
-in your browser** — your key and any row data never touch a server. Self-scan only.
+---
 
-## Roadmap (the full report card)
+## Why
 
-- [x] Supabase public-read / RLS exposure (client-side)
-- [ ] Security headers (CSP, HSTS, X-Frame-Options, …)
-- [ ] Secrets leaked in the client JS bundle (`service_role` keys, API tokens)
-- [ ] Exposed paths (`.env`, `.git/config`, source maps, debug routes)
-- [ ] Overall A–F grade + shareable result image
-- [ ] Funnel: found a leak? → [`npx tenant-guard`](https://github.com/FedericoTs/tenant-guard) to stop it shipping again
+AI code generators — Lovable, Bolt, v0, Cursor, Claude Code — ship the same handful of holes over and over. The clearest example is [CVE-2025-48757](https://nvd.nist.gov/vuln/detail/CVE-2025-48757): 170+ Lovable projects were found with Row Level Security off, so anyone holding the public `anon` key (it's in the frontend) could read their database tables. That class of bug is invisible from the outside — unless you actually probe for it.
+
+## What makes it different
+
+**The database check runs in _your_ browser, not on a server.** Every other scanner queries your database from _their_ backend. vibecheck uses the anon/public key your app already ships to mirror exactly what any visitor can read — client-side — so it never sees your data or your key. A mirror, not an exploit. Self-scan only.
+
+## What it checks
+
+Three ways in:
+
+**🌐 Live app** — paste a URL:
+
+- **Database exposure** — Supabase (RLS/public-read) **and** Firebase (Firestore + Realtime DB), probed from your browser
+- **Secrets in the client bundle** — Stripe/AWS/DB URLs, `service_role` / `sb_secret_` keys
+- **Security headers**, exposed `.env` / `.git` / source maps, admin & debug routes
+- **AI & MCP endpoints** — unauthenticated LLM proxies (credit-drain) and anonymous MCP tool lists
+- **Email spoofing** (SPF/DMARC), **TLS** + subdomain takeover, HTTPS enforcement
+- **EU privacy** — GDPR signals + AI Act Article 50 chatbot disclosure
+- **SEO / LLM visibility** — is your content even readable by a crawler or an assistant?
+
+**📦 Public repo** — cross-tenant IDOR patterns, committed secrets, an [OSV.dev](https://osv.dev) supply-chain check, a Dockerfile lint, and a downloadable CycloneDX **SBOM**.
+
+**📱 Mobile app** — drop in an `.apk` / `.ipa`; it unzips and scans the JS bundle for the same leaks, entirely in your browser — the file never leaves your device.
+
+Every failing check comes with a **fix you can paste straight into Lovable, Cursor, v0 or Claude**.
+
+## See it work
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Find → fix, in one paste**
+
+<img src="media/vibecheck-fix.gif" alt="A failing report, then copying a fix prompt to paste into an AI coding tool" width="100%">
+
+</td>
+<td width="50%" valign="top">
+
+**Three form factors**
+
+<img src="media/vibecheck-modes.gif" alt="Switching between live app, public repo and mobile app modes" width="100%">
+
+</td>
+</tr>
+</table>
+
+## Honest limits
+
+It's an outside-in scanner, not a pentest. No active injection testing (it won't point that at other people's apps), no native-binary decompilation, and for a _private_ repo the source-level checks live in a separate CLI. Everything is an observation, never a legal conclusion.
+
+## Catch it in CI
+
+Found a leak? For your real (private) repo, run the same checks — plus a live Postgres proof that one tenant cannot read another — as CI tests that fail the build:
+
+```bash
+npx tenant-guard init
+```
+
+[**tenant-guard**](https://github.com/FedericoTs/tenant-guard) — free & open source.
 
 ## Develop
 
@@ -38,9 +86,8 @@ npm test         # scan-engine unit tests (vitest)
 npm run build
 ```
 
-The scan engine lives in [`lib/scan/`](lib/scan/) as pure, dependency-injected functions
-(the network `fetch` is injected), so every rule is unit-tested without a live project.
+The scan engine lives in [`lib/scan/`](lib/scan/) as pure, dependency-injected functions — the network `fetch` is injected — so every rule is unit-tested without a live target.
 
 ## Licence
 
-MIT. By Federico Sciuca. Free, open source, no signup, no telemetry.
+MIT · by [Federico Sciuca](https://x.com/federico_sciuca) · free, open source, no signup, no telemetry.
