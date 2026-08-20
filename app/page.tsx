@@ -14,6 +14,7 @@ import type { PrivacyResult } from '@/lib/scan/privacy';
 import type { EmailAuthResult } from '@/lib/scan/email-auth';
 import type { TransportResult } from '@/lib/scan/transport';
 import type { VisibilityResult } from '@/lib/scan/visibility';
+import type { RepoScanResult, RepoFinding } from '@/lib/scan/repo';
 import type { SecretsScanResult } from '@/lib/scan/secrets';
 import type { FundamentalsResult } from '@/lib/scan/fundamentals';
 import type { LighthouseResult } from '@/lib/scan/lighthouse';
@@ -229,6 +230,77 @@ function GradeGrid({ categories }: { categories: ReportCategory[] }) {
   );
 }
 
+function repoFix(f: RepoFinding): string {
+  if (f.kind === 'secret') {
+    return 'This is committed to the repo, so treat it as compromised: ROTATE the key, then load it from an environment variable instead of source. Remove it from the working tree (git rm --cached), add the file to .gitignore, and if it is sensitive, rewrite history so it is not recoverable from old commits.';
+  }
+  return "Scope the query to the caller's organisation, not just the id — e.g. add `.eq('organization_id', user.organization_id)` (or your tenant column). Then install tenant-guard so CI fails whenever a route filters by a bare id without scoping to a tenant.";
+}
+
+const REPO_SEV: Record<RepoFinding['severity'], string> = {
+  critical: 'text-danger',
+  high: 'text-danger/80',
+  medium: 'text-warn',
+};
+
+function RepoReport({ result, onReset }: { result: RepoScanResult; onReset: () => void }) {
+  return (
+    <section>
+      <div className={`border bg-panel ${result.findings.length > 0 ? 'border-danger/40' : 'border-safe/40'}`}>
+        <div className="flex items-stretch">
+          <div className={`flex w-24 shrink-0 items-center justify-center border-r font-mono text-6xl font-semibold sm:w-32 sm:text-7xl ${tone(result.grade)}`}>
+            {result.grade}
+          </div>
+          <div className="flex min-w-0 flex-col justify-center px-5 py-5">
+            <p className="kicker mb-1.5">Repo scan</p>
+            <p className="truncate font-mono text-xs text-faint">{result.ref}</p>
+            <p className="mt-1.5 font-display text-lg leading-snug text-ink">{result.summary}</p>
+          </div>
+        </div>
+      </div>
+
+      {result.findings.length > 0 ? (
+        <div className="mt-4 space-y-3">
+          {result.findings.map((f, i) => (
+            <div key={i} className="border border-danger/30 bg-panel p-4">
+              <div className="flex items-start gap-2.5">
+                <span className={`mt-px font-mono text-sm ${REPO_SEV[f.severity]}`}>✗</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-ink">{f.label}</p>
+                  <p className="mt-0.5 break-words font-mono text-xs text-faint">{f.detail}</p>
+                  <p className="mt-1.5 border-l border-warn/40 pl-2.5 text-xs leading-relaxed text-muted">
+                    <span className="text-warn">Fix: </span>
+                    {repoFix(f)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-4 font-mono text-xs text-muted">
+          <span className="text-safe">✓</span> {result.filesScanned} source file(s) scanned, nothing found. Tests, fixtures and examples are skipped.
+        </p>
+      )}
+
+      <div className="mt-6 border border-line bg-panel p-5">
+        <p className="kicker mb-2">Private repo?</p>
+        <p className="text-sm leading-relaxed text-muted">
+          This scans public repos from the outside. For your real (private) repo, run the same checks — plus a live
+          Postgres proof that one tenant cannot read another — in CI:
+        </p>
+        <code className="mt-3 block border border-line bg-canvas px-3 py-2 font-mono text-xs text-safe">npx tenant-guard init</code>
+      </div>
+
+      <div className="mt-8 flex flex-wrap gap-3">
+        <button onClick={onReset} className="border border-line px-4 py-2 font-mono text-xs text-muted transition-colors hover:border-ink hover:text-ink">
+          ↺ scan another
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export default function Home() {
   const [appUrl, setAppUrl] = useState('');
   const [showDb, setShowDb] = useState(false);
@@ -244,6 +316,11 @@ export default function Home() {
   const [autoDetected, setAutoDetected] = useState(false);
   const [skipped, setSkipped] = useState<string[]>([]);
   const [rateLimited, setRateLimited] = useState(false);
+  const [mode, setMode] = useState<'url' | 'repo'>('url');
+  const [repoUrl, setRepoUrl] = useState('');
+  const [repoResult, setRepoResult] = useState<RepoScanResult | null>(null);
+  const [repoLoading, setRepoLoading] = useState(false);
+  const [repoError, setRepoError] = useState('');
   const [notifyEmail, setNotifyEmail] = useState('');
   const [notifyState, setNotifyState] = useState<'idle' | 'sending' | 'done' | 'error'>('idle');
   const [notifyError, setNotifyError] = useState('');
@@ -417,6 +494,28 @@ export default function Home() {
     }
   }
 
+  async function runRepo(e: React.FormEvent) {
+    e.preventDefault();
+    if (!repoUrl.trim() || repoLoading) return;
+    setRepoLoading(true);
+    setRepoError('');
+    setRepoResult(null);
+    try {
+      const r = await fetch('/api/scan/repo', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ repo: repoUrl }),
+      });
+      const j = (await r.json()) as RepoScanResult;
+      if (r.ok && j.ok) setRepoResult(j);
+      else setRepoError(j.error ?? 'Could not scan that repository.');
+    } catch {
+      setRepoError('Could not scan that repository.');
+    } finally {
+      setRepoLoading(false);
+    }
+  }
+
   function reset() {
     setInputs(null);
     setError('');
@@ -436,7 +535,7 @@ export default function Home() {
         </a>
       </div>
 
-      {!report && (
+      {!report && !repoResult && (
         <>
           <header className="mb-10">
             <p className="kicker mb-4">Security report card · for AI-built apps</p>
@@ -452,6 +551,22 @@ export default function Home() {
             </p>
           </header>
 
+          <div className="mb-6 flex gap-1 border border-line bg-panel p-1 font-mono text-xs">
+            <button
+              onClick={() => setMode('url')}
+              className={`flex-1 px-3 py-2 uppercase tracking-wider transition ${mode === 'url' ? 'bg-ink text-canvas' : 'text-muted hover:text-ink'}`}
+            >
+              Live app
+            </button>
+            <button
+              onClick={() => setMode('repo')}
+              className={`flex-1 px-3 py-2 uppercase tracking-wider transition ${mode === 'repo' ? 'bg-ink text-canvas' : 'text-muted hover:text-ink'}`}
+            >
+              Public repo
+            </button>
+          </div>
+
+          {mode === 'url' && (
           <form onSubmit={run} className="border border-line bg-panel">
             <div className="border-b border-line p-4">
               <label className="kicker block mb-2">Your app URL</label>
@@ -505,6 +620,39 @@ export default function Home() {
               </button>
             </div>
           </form>
+          )}
+
+          {mode === 'repo' && (
+            <form onSubmit={runRepo} className="border border-line bg-panel">
+              <div className="border-b border-line p-4">
+                <label className="kicker block mb-2">Public GitHub repo</label>
+                <input
+                  value={repoUrl}
+                  onChange={(e) => setRepoUrl(e.target.value)}
+                  placeholder="github.com/owner/repo"
+                  className="w-full bg-transparent font-mono text-base text-ink placeholder-faint outline-none sm:text-sm"
+                />
+              </div>
+              <div className="flex items-center justify-between p-4">
+                <span className="kicker text-faint">source-level · public repos only</span>
+                <button
+                  type="submit"
+                  disabled={repoLoading}
+                  className="border border-ink bg-ink px-5 py-2 font-mono text-xs font-medium uppercase tracking-wider text-canvas transition hover:bg-transparent hover:text-ink disabled:opacity-40"
+                >
+                  {repoLoading ? 'scanning…' : 'scan repo →'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {mode === 'repo' && repoLoading && (
+            <div className="mt-4 flex items-center gap-2.5 border border-line bg-panel px-4 py-3">
+              <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-warn" />
+              <p className="font-mono text-xs text-muted">Fetching source &amp; running checks — committed secrets, cross-tenant routes…</p>
+            </div>
+          )}
+          {mode === 'repo' && repoError && <p className="mt-4 font-mono text-xs text-danger">{repoError}</p>}
 
           {loading && (
             <div className="mt-4 border border-line bg-panel">
@@ -540,6 +688,8 @@ export default function Home() {
           </p>
         </>
       )}
+
+      {repoResult && <RepoReport result={repoResult} onReset={() => { setRepoResult(null); setRepoError(''); }} />}
 
       {report && (
         <section>
