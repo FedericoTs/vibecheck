@@ -69,6 +69,16 @@ export default async function ResultPage({ searchParams }: { searchParams: SP })
           Find out in seconds — see exactly what a stranger can read from your app. Runs in your
           browser, no signup — your scan is never stored.
         </p>
+        {/* What the grade actually stands for. A letter with nothing behind it
+            is not persuasive; the specifics are. */}
+        <ul className="mt-6 grid gap-x-6 gap-y-1.5 font-mono text-xs text-muted sm:grid-cols-2">
+          <li>· database tables anyone can read</li>
+          <li>· API keys shipped in the bundle</li>
+          <li>· a development build served live</li>
+          <li>· source maps that rebuild your code</li>
+          <li>· hidden text aimed at AI readers</li>
+          <li>· libraries with known CVEs</li>
+        </ul>
         <Link
           href="/"
           className="mt-6 inline-block border border-ink bg-ink px-6 py-3 font-mono text-xs font-medium uppercase tracking-wider text-canvas transition hover:bg-transparent hover:text-ink"

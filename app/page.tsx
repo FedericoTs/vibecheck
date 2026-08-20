@@ -390,6 +390,27 @@ export default function Home() {
     }
   }
 
+  /**
+   * A pre-composed post. It opens X's compose window — the user still writes
+   * and sends it themselves; nothing is posted on their behalf.
+   *
+   * The wording follows the result rather than flattening it: a clean scan and
+   * a failing one are different stories, and overclaiming either would make the
+   * share a lie. A clean result says what was checked, not "my app is secure".
+   */
+  const shareIntentUrl = useMemo(() => {
+    // Guarded because a client component still renders once on the server —
+    // though in practice `report` is null there, so this returns '#'.
+    if (!report || typeof window === 'undefined') return '#';
+    const url = `${window.location.origin}/r?g=${report.overallGrade}&i=${report.issueCount}`;
+    const n = report.issueCount;
+    const text =
+      n === 0
+        ? `Scanned my app with vibecheck — no public exposure found. It checks what a stranger can already read from your app: exposed database tables, keys in the bundle, dev builds, hidden text aimed at AI. Free, no signup.`
+        : `vibecheck found ${n} issue${n === 1 ? '' : 's'} in my AI-built app (graded ${report.overallGrade}). It shows what a stranger can already read — exposed tables, keys in the bundle, dev builds. Free, no signup, and it hands you the fix.`;
+    return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
+  }, [report]);
+
   function share() {
     if (!report) return;
     track('result_shared', { grade: report.overallGrade });
@@ -541,13 +562,27 @@ export default function Home() {
     setSkipped([]);
     setRateLimited(false);
     setDone([]);
+    // The repo result also hides the form, so clearing it is part of going home.
+    setRepoResult(null);
+    setRepoError('');
+    window.scrollTo({ top: 0 });
   }
 
   return (
     <main className="mx-auto w-full max-w-2xl px-5 py-10 sm:py-16">
-      {/* status bar */}
+      {/* status bar — doubles as the way home once a result has replaced the form */}
       <div className="mb-14 flex items-center justify-between kicker">
-        <span>vibecheck ▸ security scan</span>
+        {report || repoResult ? (
+          <button
+            onClick={reset}
+            className="-my-2 py-2 text-muted transition-colors hover:text-ink"
+            aria-label="Back to the scanner"
+          >
+            ← vibecheck ▸ scan another
+          </button>
+        ) : (
+          <span>vibecheck ▸ security scan</span>
+        )}
         <a href={GITHUB_URL} className="-my-2 py-2 text-faint transition-colors hover:text-ink">
           open source ↗
         </a>
@@ -991,12 +1026,48 @@ export default function Home() {
                   : `⚡ copy the fix prompt (${report.issueCount} issue${report.issueCount === 1 ? '' : 's'})`}
               </button>
             )}
-            <button
-              onClick={share}
-              className="w-full border border-ink bg-ink px-5 py-3 font-mono text-xs font-medium uppercase tracking-wider text-canvas transition hover:bg-transparent hover:text-ink"
-            >
-              {copied ? '✓ link copied — paste it anywhere' : 'share your result →'}
-            </button>
+            {/*
+              Share. The reason people do not post a security result is the fear
+              of pointing strangers at their app — so show them the exact card
+              that will unfurl, and say plainly what the link does NOT carry.
+              Both statements are true: /r takes only a grade and a count.
+            */}
+            <div className="border border-line bg-panel p-5">
+              <div className="mb-3 flex items-baseline justify-between gap-3">
+                <p className="kicker">Share your result</p>
+                <p className="font-mono text-[11px] text-faint">grade only · no URL</p>
+              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/api/og?g=${report.overallGrade}&i=${report.issueCount}`}
+                alt={`Preview of the card that will appear when you share: grade ${report.overallGrade}, ${report.issueCount} issue${report.issueCount === 1 ? '' : 's'}`}
+                width={1200}
+                height={630}
+                loading="lazy"
+                className="w-full border border-line"
+              />
+              <p className="mt-3 text-xs leading-relaxed text-faint">
+                This is exactly what people see. Your URL, your keys and the findings themselves are
+                never in the link — only the grade and the number of issues.
+              </p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <a
+                  href={shareIntentUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => track('result_shared', { grade: report.overallGrade, channel: 'x' })}
+                  className="flex items-center justify-center gap-2 border border-ink bg-ink px-5 py-3 font-mono text-xs font-medium uppercase tracking-wider text-canvas transition hover:bg-transparent hover:text-ink"
+                >
+                  <span className="text-sm font-semibold">𝕏</span> post it
+                </a>
+                <button
+                  onClick={share}
+                  className="border border-line px-5 py-3 font-mono text-xs font-medium uppercase tracking-wider text-muted transition hover:border-ink hover:text-ink"
+                >
+                  {copied ? '✓ link copied' : 'copy link'}
+                </button>
+              </div>
+            </div>
             <a
               href={X_URL}
               target="_blank"
