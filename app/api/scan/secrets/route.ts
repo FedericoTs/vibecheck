@@ -3,7 +3,8 @@ import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { safeFetch } from '@/lib/scan/fetch';
 import { scriptUrls, fetchScript as fetchText, MAX_BYTES } from '@/lib/scan/bundle';
-import { findSecrets, gradeSecrets, isSourceMap, sourcesFromMap, countPublicGoogleKeys, type SecretFinding } from '@/lib/scan/secrets';
+import { findSecrets, gradeSecrets, countPublicGoogleKeys, type SecretFinding } from '@/lib/scan/secrets';
+import { scanSourceMaps } from '@/lib/scan/sourcemap';
 import { discoverSupabase } from '@/lib/scan/discover';
 import { discoverFirebase, extractCollections } from '@/lib/scan/firebase';
 import { scanLibraries } from '@/lib/scan/libs';
@@ -80,21 +81,21 @@ export async function POST(request: Request): Promise<Response> {
   // comments, unminified logic, and secrets that minification hid. We both flag
   // the exposure AND scan the restored source, because a key invisible in the
   // shipped bundle can be readable in the map.
-  const mapTargets = scripts.slice(0, 4).map((s) => `${s}.map`);
-  const maps = await Promise.all(
-    mapTargets.map(async (m) => {
-      const body = await fetchText(m);
-      if (!isSourceMap(body ? 200 : 0, body)) return null;
-      const source = sourcesFromMap(body);
-      // A secret found ONLY in the source map — tag it so the finding is honest
-      // about where it came from.
-      const fromMap = findSecrets(source).map((f) => ({ ...f, label: `${f.label} (in an exposed source map)` }));
-      return { name: m.split('/').pop() ?? m, fromMap };
-    }),
+  //
+  // The map URL comes from each chunk's own sourceMappingURL annotation,
+  // resolved against that chunk. Appending '.map' to the chunk URL (what this
+  // used to do) finds nothing on any modern bundler, because the map is not
+  // named after the chunk.
+  const mapScan = await scanSourceMaps(
+    scripts.map((url, i) => ({ url, code: bundles[i] ?? '' })).filter((c) => c.code).slice(0, 6),
+    fetchText,
+    // A secret found ONLY in the source map — tag it so the finding is honest
+    // about where it came from.
+    (source) => {
+      all.push(...findSecrets(source).map((f) => ({ ...f, label: `${f.label} (in an exposed source map)` })));
+    },
   );
-  const liveMaps = maps.filter((m): m is { name: string; fromMap: SecretFinding[] } => !!m);
-  const exposedMaps = liveMaps.map((m) => m.name);
-  for (const m of liveMaps) all.push(...m.fromMap);
+  const exposedMaps = mapScan.exposed.map((e) => e.chunk);
 
   // Dedupe across HTML + every bundle.
   const seen = new Set<string>();
@@ -107,7 +108,14 @@ export async function POST(request: Request): Promise<Response> {
 
   return NextResponse.json({
     ...gradeSecrets(findings, finalUrl.host),
-    sourceMaps: { exposed: exposedMaps, checked: mapTargets.length > 0 },
+    sourceMaps: {
+      exposed: exposedMaps,
+      checked: mapScan.checked > 0,
+      annotated: mapScan.annotated,
+      unresolved: mapScan.unresolved,
+      firstPartyFiles: mapScan.exposed.reduce((n, e) => n + e.firstPartyFiles, 0),
+      sample: mapScan.exposed.flatMap((e) => e.sampleSources).slice(0, 3),
+    },
     publicGoogleKeys: countPublicGoogleKeys(allCode),
     libraries: scanLibraries(allCode, finalUrl.host),
     discovered,

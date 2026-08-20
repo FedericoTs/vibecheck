@@ -224,15 +224,27 @@ export function combineReport(inp: ReportInputs): Report {
       });
     }
     if (s.sourceMaps?.checked) {
-      const n = s.sourceMaps.exposed.length;
+      const sm = s.sourceMaps;
+      const n = sm.exposed.length;
       if (n > 0) issueCount += n;
+      // Evidence-first, and precise about which of three states we are in: we
+      // fetched and parsed a map; a map was referenced but did not resolve; or
+      // nothing referenced one at all. The middle case used to be reported as a
+      // clean pass, which claimed more than we had checked.
+      const files = sm.firstPartyFiles ?? 0;
+      const sample = (sm.sample ?? []).slice(0, 2).join(', ');
+      const detail =
+        n > 0
+          ? `${files > 0 ? `${files} of your original source file(s)` : 'your build output'} can be reconstructed` +
+            (sample ? ` — including ${sample}` : '') +
+            `. Set productionBrowserSourceMaps to false.`
+          : (sm.annotated ?? 0) > 0
+            ? `your chunks reference source maps, but they are not served — we fetched ${sm.annotated} and none resolved`
+            : 'no source maps are referenced or served';
       checks.push({
         label: 'Source maps not published',
         pass: n === 0,
-        detail:
-          n === 0
-            ? 'your original source is not downloadable'
-            : `${n} .map file(s) served — anyone can read your original source: ${s.sourceMaps.exposed.slice(0, 2).join(', ')}`,
+        detail,
         severity: 'medium',
       });
     }

@@ -25,7 +25,18 @@ export interface SecretsScanResult {
   host: string;
   findings: SecretFinding[];
   /** publicly served .js.map files — these republish your original source code. */
-  sourceMaps?: { exposed: string[]; checked: boolean };
+  sourceMaps?: {
+    exposed: string[];
+    checked: boolean;
+    /** Chunks that referenced a map, whether or not it actually resolved. */
+    annotated?: number;
+    /** Referenced a map that did NOT resolve — reported honestly, never as proof of safety. */
+    unresolved?: number;
+    /** Original app files (not dependencies) the resolved maps reconstruct. */
+    firstPartyFiles?: number;
+    /** A few recovered paths, as evidence. Never file content. */
+    sample?: string[];
+  };
   /** advisory: browser-side Google/Firebase keys, which are public by design. */
   publicGoogleKeys?: number;
   grade: Grade;
