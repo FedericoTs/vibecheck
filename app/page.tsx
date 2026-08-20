@@ -256,6 +256,8 @@ export default function Home() {
   const [notifyError, setNotifyError] = useState('');
   const [done, setDone] = useState<string[]>([]);
   const report = useMemo(() => (inputs ? combineReport(inputs) : null), [inputs]);
+  // Point-in-time stamp for the share badge — a scan is a moment, not a standing promise.
+  const badgeDate = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 
   // Anonymous, cookieless usage analytics. We record the grade, the mode, and the
   // issue COUNT — never the URL, the key, or the findings — so "we never see your
@@ -408,7 +410,7 @@ export default function Home() {
   function copyBadge() {
     if (!report) return;
     const origin = window.location.origin;
-    const md = `[![vibecheck security: ${report.overallGrade}](${origin}/badge?g=${report.overallGrade})](${origin})`;
+    const md = `[![vibecheck — no public exposure found, ${badgeDate}](${origin}/badge?g=${report.overallGrade}&d=${encodeURIComponent(badgeDate)})](${origin})`;
     navigator.clipboard?.writeText(md).then(() => {
       setBadgeCopied(true);
       setTimeout(() => setBadgeCopied(false), 2400);
@@ -936,11 +938,17 @@ export default function Home() {
             <div className="mt-8 border border-safe/30 bg-panel p-5">
               <p className="kicker mb-2 text-safe">Clean scan — show it off</p>
               <p className="text-sm text-muted">
-                Add this to your README or footer. It links back here so anyone can run their own scan.
+                Add it to your README or footer. It&apos;s <span className="text-ink">date-stamped</span> — a scan is a
+                point in time, not a guarantee — and links back so anyone can re-check.
               </p>
               <div className="mt-3 flex items-center gap-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={`/badge?g=${report.overallGrade}`} alt={`vibecheck security: ${report.overallGrade}`} width={126} height={20} />
+                <img
+                  src={`/badge?g=${report.overallGrade}&d=${encodeURIComponent(badgeDate)}`}
+                  alt={`vibecheck — no public exposure found, ${badgeDate}`}
+                  width={288}
+                  height={20}
+                />
                 <button
                   onClick={copyBadge}
                   className="border border-line px-3 py-1.5 font-mono text-xs text-muted transition-colors hover:border-ink hover:text-ink"
