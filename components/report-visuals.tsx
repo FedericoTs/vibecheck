@@ -262,9 +262,9 @@ export function WebVitals({ cwv }: { cwv: CoreWebVitals }) {
 function CrawlerRow({ c }: { c: CrawlerAccess }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-line-soft py-2 last:border-0">
-      <div className="min-w-0 truncate">
-        <span className="font-mono text-xs text-ink">{c.name}</span>
-        <span className="ml-2 font-mono text-[11px] text-faint">{c.purpose}</span>
+      <div className="min-w-0">
+        <div className="truncate font-mono text-xs text-ink">{c.name}</div>
+        <div className="truncate font-mono text-[11px] text-faint">{c.purpose}</div>
       </div>
       {c.allowed ? (
         <span className="shrink-0 font-mono text-xs text-safe">✓ allowed</span>
