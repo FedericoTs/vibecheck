@@ -10,6 +10,8 @@ import {
   fleschReadingEase,
   headingStructure,
   altTextCoverage,
+  robotsAllows,
+  crawlerMatrix,
 } from './visibility';
 
 const facts = (over: Partial<VisibilityFacts> = {}): VisibilityFacts => ({
@@ -137,5 +139,48 @@ describe('content quality — readability, headings, alt text', () => {
     expect(keys).toContain('headings');
     expect(keys).toContain('alt-text');
     expect(r.checks.find((c) => c.key === 'headings')!.pass).toBe(false); // two H1s
+  });
+});
+
+describe('crawler access matrix (robots.txt)', () => {
+  it('no robots.txt = everyone allowed', () => {
+    expect(robotsAllows('', 'gptbot')).toBe(true);
+    expect(crawlerMatrix('').every((c) => c.allowed)).toBe(true);
+  });
+
+  it('a bot-specific Disallow: / blocks that bot only', () => {
+    const robots = 'User-agent: GPTBot\nDisallow: /\n\nUser-agent: *\nDisallow:';
+    expect(robotsAllows(robots, 'gptbot')).toBe(false);
+    expect(robotsAllows(robots, 'googlebot')).toBe(true); // uses * group (empty disallow)
+  });
+
+  it('a blanket Disallow: / under * blocks bots without their own group', () => {
+    expect(robotsAllows('User-agent: *\nDisallow: /', 'ccbot')).toBe(false);
+  });
+
+  it('a bot with its own group ignores the * group', () => {
+    const robots = 'User-agent: *\nDisallow: /\n\nUser-agent: Googlebot\nDisallow:';
+    expect(robotsAllows(robots, 'googlebot')).toBe(true); // own group allows
+    expect(robotsAllows(robots, 'bingbot')).toBe(false); // falls to * (blocked)
+  });
+
+  it('shared rules across consecutive User-agent lines', () => {
+    const robots = 'User-agent: GPTBot\nUser-agent: CCBot\nDisallow: /';
+    expect(robotsAllows(robots, 'gptbot')).toBe(false);
+    expect(robotsAllows(robots, 'ccbot')).toBe(false);
+    expect(robotsAllows(robots, 'googlebot')).toBe(true);
+  });
+
+  it('a sub-path Disallow does not block root; Allow:/ overrides Disallow:/', () => {
+    expect(robotsAllows('User-agent: *\nDisallow: /admin', 'googlebot')).toBe(true);
+    expect(robotsAllows('User-agent: *\nDisallow: /\nAllow: /', 'googlebot')).toBe(true);
+  });
+
+  it('the matrix reports both search and AI crawlers', () => {
+    const m = crawlerMatrix('User-agent: GPTBot\nDisallow: /');
+    expect(m.find((c) => c.name === 'GPTBot')?.allowed).toBe(false);
+    expect(m.find((c) => c.name === 'Googlebot')?.allowed).toBe(true);
+    expect(m.some((c) => c.group === 'search')).toBe(true);
+    expect(m.some((c) => c.group === 'ai')).toBe(true);
   });
 });

@@ -9,7 +9,7 @@ import { unzipSync } from 'fflate';
 import { extractScannableText, analyzeBinaryText } from '@/lib/scan/binary';
 import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
 import { buildFixPrompt, fixFor } from '@/lib/scan/fixes';
-import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals } from '@/components/report-visuals';
+import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals, CrawlerMatrix } from '@/components/report-visuals';
 import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
 import type { RoutesScanResult } from '@/lib/scan/routes';
@@ -926,6 +926,11 @@ export default function Home() {
                   </div>
                   <LighthouseGauges scores={inputs.lighthouse.scores} />
                   {inputs.lighthouse.cwv && <WebVitals cwv={inputs.lighthouse.cwv} />}
+                </div>
+              )}
+              {inputs?.visibility?.crawlers && inputs.visibility.crawlers.length > 0 && (
+                <div className="mb-3">
+                  <CrawlerMatrix crawlers={inputs.visibility.crawlers} />
                 </div>
               )}
               <div className="space-y-3">

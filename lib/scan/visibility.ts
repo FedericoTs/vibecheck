@@ -31,6 +31,7 @@ export interface VisibilityResult {
   host: string;
   checks: VisibilityCheck[];
   failed: VisibilityCheck[];
+  crawlers: CrawlerAccess[];
   grade: Grade;
   score: number;
   summary: string;
@@ -138,6 +139,71 @@ export function blockedAiAgents(robotsTxt: string): string[] {
     if (match) out.push(match);
   }
   return out;
+}
+
+export interface CrawlerAccess {
+  name: string;
+  group: 'search' | 'ai';
+  purpose: string;
+  allowed: boolean;
+}
+
+// The crawlers worth showing a site owner: the search engines you WANT, and the
+// AI answer-engines whose access decides whether ChatGPT / Claude / Perplexity /
+// Gemini can ever cite you. Blocking any of these is a legitimate choice, so the
+// matrix is REPORTED, never graded.
+const CRAWLERS: Array<{ name: string; token: string; group: 'search' | 'ai'; purpose: string }> = [
+  { name: 'Googlebot', token: 'googlebot', group: 'search', purpose: 'Google Search' },
+  { name: 'Bingbot', token: 'bingbot', group: 'search', purpose: 'Bing · Copilot' },
+  { name: 'GPTBot', token: 'gptbot', group: 'ai', purpose: 'OpenAI · training' },
+  { name: 'OAI-SearchBot', token: 'oai-searchbot', group: 'ai', purpose: 'ChatGPT Search' },
+  { name: 'ClaudeBot', token: 'claudebot', group: 'ai', purpose: 'Claude' },
+  { name: 'PerplexityBot', token: 'perplexitybot', group: 'ai', purpose: 'Perplexity' },
+  { name: 'Google-Extended', token: 'google-extended', group: 'ai', purpose: 'Gemini · training' },
+  { name: 'CCBot', token: 'ccbot', group: 'ai', purpose: 'Common Crawl' },
+  { name: 'Applebot-Extended', token: 'applebot-extended', group: 'ai', purpose: 'Apple Intelligence' },
+  { name: 'Bytespider', token: 'bytespider', group: 'ai', purpose: 'ByteDance · TikTok' },
+];
+
+/** The robots.txt rule lines that apply to a user-agent: exact match wins over `*`. */
+function rulesFor(robots: string, token: string): string[] | null {
+  const lines = robots.split(/\r?\n/).map((l) => l.replace(/#.*$/, '').trim()).filter(Boolean);
+  const groups: Array<{ agents: string[]; rules: string[] }> = [];
+  let cur: { agents: string[]; rules: string[] } | null = null;
+  let prevWasAgent = false;
+  for (const line of lines) {
+    const ua = line.match(/^user-agent:\s*(.+)$/i);
+    if (ua) {
+      // consecutive User-agent lines share the following rules (robots.txt spec)
+      if (!cur || !prevWasAgent) {
+        cur = { agents: [], rules: [] };
+        groups.push(cur);
+      }
+      cur.agents.push(ua[1].trim().toLowerCase());
+      prevWasAgent = true;
+    } else {
+      if (cur) cur.rules.push(line);
+      prevWasAgent = false;
+    }
+  }
+  const exact = groups.find((g) => g.agents.includes(token));
+  if (exact) return exact.rules;
+  const star = groups.find((g) => g.agents.includes('*'));
+  return star ? star.rules : null;
+}
+
+/** Can this crawler reach the site root? No robots / no matching group = yes. */
+export function robotsAllows(robots: string, token: string): boolean {
+  if (!robots.trim()) return true;
+  const rules = rulesFor(robots, token.toLowerCase());
+  if (!rules) return true;
+  if (rules.some((r) => /^allow:\s*\/\s*$/i.test(r))) return true; // explicit root Allow wins
+  return !rules.some((r) => /^disallow:\s*\/\s*$/i.test(r));
+}
+
+/** Allow/block status for every crawler we track. Reported, never graded. */
+export function crawlerMatrix(robots: string): CrawlerAccess[] {
+  return CRAWLERS.map(({ name, token, group, purpose }) => ({ name, group, purpose, allowed: robotsAllows(robots, token) }));
 }
 
 export interface VisibilityFacts {
@@ -266,6 +332,7 @@ export function analyzeVisibility(facts: VisibilityFacts, host = ''): Visibility
     host,
     checks,
     failed,
+    crawlers: crawlerMatrix(facts.robotsTxt),
     grade: scoreToGrade(score),
     score,
     summary: jsOnly

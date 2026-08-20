@@ -1,6 +1,7 @@
 import type { Grade } from '@/lib/scan/types';
 import { SEVERITY_ORDER, severityCounts, type Report, type ReportCategory, type Severity } from '@/lib/scan/report';
 import type { LighthouseScores, CoreWebVitals } from '@/lib/scan/lighthouse';
+import type { CrawlerAccess } from '@/lib/scan/visibility';
 
 /** grade -> letter/border colour classes, shared across the report. */
 export function tone(grade: Grade | null): string {
@@ -254,6 +255,64 @@ export function WebVitals({ cwv }: { cwv: CoreWebVitals }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function CrawlerRow({ c }: { c: CrawlerAccess }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-line-soft py-2 last:border-0">
+      <div className="min-w-0 truncate">
+        <span className="font-mono text-xs text-ink">{c.name}</span>
+        <span className="ml-2 font-mono text-[11px] text-faint">{c.purpose}</span>
+      </div>
+      {c.allowed ? (
+        <span className="shrink-0 font-mono text-xs text-safe">✓ allowed</span>
+      ) : (
+        <span className="shrink-0 font-mono text-xs text-danger">✗ blocked</span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Which search engines and AI answer-engines robots.txt lets in. Blocking is a
+ * legitimate choice, so this is REPORTED, never graded — but it's the single
+ * thing that decides whether ChatGPT / Claude / Perplexity / Gemini can cite you.
+ */
+export function CrawlerMatrix({ crawlers }: { crawlers: CrawlerAccess[] }) {
+  const search = crawlers.filter((c) => c.group === 'search');
+  const ai = crawlers.filter((c) => c.group === 'ai');
+  const blocked = crawlers.filter((c) => !c.allowed).length;
+  return (
+    <div className="border border-line bg-panel p-5">
+      <div className="mb-4 flex items-baseline justify-between">
+        <p className="kicker">
+          Crawler access{' '}
+          <span className="tracking-normal text-faint" style={{ textTransform: 'none' }}>
+            · from robots.txt
+          </span>
+        </p>
+        <p className="font-mono text-xs text-faint">{blocked === 0 ? 'all allowed' : `${blocked} blocked`}</p>
+      </div>
+      <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+        <div>
+          <p className="kicker mb-1">Search engines</p>
+          {search.map((c) => (
+            <CrawlerRow key={c.name} c={c} />
+          ))}
+        </div>
+        <div>
+          <p className="kicker mb-1">AI answer engines</p>
+          {ai.map((c) => (
+            <CrawlerRow key={c.name} c={c} />
+          ))}
+        </div>
+      </div>
+      <p className="mt-4 text-xs leading-relaxed text-faint">
+        Blocking a crawler is a deliberate choice — reported, not graded. But if you want ChatGPT, Claude, Perplexity
+        or Gemini to be able to cite you, those bots need access.
+      </p>
     </div>
   );
 }
