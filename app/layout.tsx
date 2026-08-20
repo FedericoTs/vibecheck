@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { headers } from "next/headers";
 import { siteBaseUrl } from "@/lib/site-url";
 import "./globals.css";
 
@@ -81,11 +82,15 @@ function structuredData(base: string): string {
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const base = (await siteBaseUrl()).origin;
+  // Next nonces the scripts it emits itself, but not ours. A JSON-LD data block
+  // is not executable and the spec does not require it, yet browsers have
+  // differed on this — carrying the nonce costs nothing and removes the doubt.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="en" className={`${display.variable} ${mono.variable} h-full antialiased`}>
       <body className="min-h-full">
         {children}
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData(base) }} />
+        <script nonce={nonce} type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData(base) }} />
         <Analytics />
       </body>
     </html>

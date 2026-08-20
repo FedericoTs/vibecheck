@@ -9,7 +9,7 @@ import { buildCsp, generateNonce } from '@/lib/csp';
  * payload), which is why the header is set on both the forwarded request and
  * the response.
  */
-export function middleware(request: NextRequest): NextResponse {
+export function proxy(request: NextRequest): NextResponse {
   const nonce = generateNonce();
   const csp = buildCsp({ nonce });
 
