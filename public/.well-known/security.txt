@@ -1,0 +1,13 @@
+# vibecheck — https://ismyappleaking.com
+# Responsible disclosure channel (RFC 9116).
+# vibecheck is a free, open-source security scanner. If you find a
+# vulnerability in the tool itself, please tell us before telling the world.
+
+Contact: mailto:federicosciuca@droplab.io
+Expires: 2027-08-20T00:00:00.000Z
+Preferred-Languages: en, it
+Canonical: https://ismyappleaking.com/.well-known/security.txt
+Policy: https://ismyappleaking.com/legal
+
+# Source: https://github.com/FedericoTs/vibecheck — issues and PRs welcome for
+# non-sensitive bugs. Please use email for anything exploitable.
