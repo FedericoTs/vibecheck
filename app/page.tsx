@@ -1035,8 +1035,12 @@ export default function Home() {
             provided href/src unchanged. Hardened without breaking it: referrerPolicy stops the
             third-party image request from leaking a visitor's page URL to divvlaunches.com, and
             lazy/async loading means their host being slow or down never blocks or shifts our page. */}
-        <div className="mt-6">
-          <a href="https://divvlaunches.com" aria-label="Featured on DivvLaunches">
+        <div className="mt-8">
+          <a
+            href="https://divvlaunches.com"
+            aria-label="Featured on DivvLaunches"
+            className="inline-block opacity-80 transition-opacity hover:opacity-100"
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="https://www.divvlaunches.com/divvlaunches-featured-badge.png"
@@ -1046,7 +1050,7 @@ export default function Home() {
               loading="lazy"
               decoding="async"
               referrerPolicy="no-referrer"
-              style={{ maxWidth: '100%', height: 'auto' }}
+              style={{ width: 168, maxWidth: '100%', height: 'auto' }}
             />
           </a>
         </div>
