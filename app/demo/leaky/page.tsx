@@ -64,8 +64,13 @@ getDocs(collection(db, "orders"));`;
       <p className="mt-5 leading-relaxed text-muted">
         This page exists to show what a failing report looks like — and to prove the scanners
         actually fire. It ships the mistakes AI code generators make constantly: secret keys in the
-        frontend, an unauthenticated user API, an exposed <code className="font-mono text-ink">.env</code>,
-        and no security headers.
+        frontend, a live Firebase config, libraries with known CVEs, and an instruction hidden in the
+        text that only an AI can read.
+      </p>
+      <p className="mt-3 text-sm text-muted">
+        The security headers here still pass, because they are set for the whole site and this page
+        cannot opt out of them. Saying otherwise would be the same kind of unearned claim this tool
+        exists to catch.
       </p>
       <p className="mt-4 text-sm text-faint">
         Everything here is fake and inert — placeholder keys that point at nothing, on a page we own.
