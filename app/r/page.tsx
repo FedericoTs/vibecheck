@@ -27,6 +27,9 @@ export async function generateMetadata({ searchParams }: { searchParams: SP }): 
   return {
     title,
     description,
+    // Thin, near-duplicate per-query share pages — keep them out of the index,
+    // but crawlable (default follow) so social unfurlers still fetch the OG card.
+    robots: { index: false },
     openGraph: { title, description, images: [{ url: og, width: 1200, height: 630 }], type: 'website' },
     twitter: { card: 'summary_large_image', title, description, images: [og] },
   };
