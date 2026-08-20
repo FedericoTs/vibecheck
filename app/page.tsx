@@ -1031,6 +1031,25 @@ export default function Home() {
             regulatory-crosswalk <span className="text-faint">— open dataset mapping NIS2 / DORA / ISO 27001 ↗</span>
           </a>
         </div>
+        {/* Featured-on badge. Kept a plain SSR-rendered link (visible, not JS-only) with the
+            provided href/src unchanged. Hardened without breaking it: referrerPolicy stops the
+            third-party image request from leaking a visitor's page URL to divvlaunches.com, and
+            lazy/async loading means their host being slow or down never blocks or shifts our page. */}
+        <div className="mt-6">
+          <a href="https://divvlaunches.com" aria-label="Featured on DivvLaunches">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="https://www.divvlaunches.com/divvlaunches-featured-badge.png"
+              alt="Featured on DivvLaunches"
+              width={320}
+              height={90}
+              loading="lazy"
+              decoding="async"
+              referrerPolicy="no-referrer"
+              style={{ maxWidth: '100%', height: 'auto' }}
+            />
+          </a>
+        </div>
         <p className="mt-5 kicker text-faint">
           free · open source · no signup · MIT ·{' '}
           <a href={X_URL} className="-my-1 inline-block py-1 transition-colors hover:text-ink">
