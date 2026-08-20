@@ -5,9 +5,9 @@ import { scanSupabase } from '@/lib/scan/supabase';
 import { scanFirebase, extractCollections, firebaseConfigFromText, type FirebaseConfig } from '@/lib/scan/firebase';
 import { unzipSync } from 'fflate';
 import { extractScannableText, analyzeBinaryText } from '@/lib/scan/binary';
-import { combineReport, severityCounts, SEVERITY_ORDER, type ReportInputs, type ReportCategory, type CheckItem, type Report, type Severity } from '@/lib/scan/report';
+import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
 import { buildFixPrompt, fixFor } from '@/lib/scan/fixes';
-import type { Grade } from '@/lib/scan/types';
+import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix } from '@/components/report-visuals';
 import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
 import type { RoutesScanResult } from '@/lib/scan/routes';
@@ -41,84 +41,6 @@ const SCAN_STEPS = [
   'AI & search visibility',
   'fundamentals',
 ];
-
-function tone(grade: Grade | null): string {
-  if (grade === 'A' || grade === 'B') return 'text-safe border-safe/40';
-  if (grade === 'C') return 'text-warn border-warn/40';
-  if (grade === 'D' || grade === 'F') return 'text-danger border-danger/50';
-  return 'text-muted border-line';
-}
-
-const SEVERITY_STYLE: Record<Severity, { bar: string; text: string; label: string }> = {
-  critical: { bar: 'bg-danger', text: 'text-danger', label: 'critical' },
-  high: { bar: 'bg-danger/60', text: 'text-danger/80', label: 'high' },
-  medium: { bar: 'bg-warn', text: 'text-warn', label: 'medium' },
-  low: { bar: 'bg-muted/50', text: 'text-muted', label: 'low' },
-};
-
-/**
- * Issues weighted by severity. Nine findings is not nine equal problems — one
- * anonymously-readable users table outweighs a missing Referrer-Policy, and a
- * flat count hides exactly that. Widths are proportional to the real counts.
- */
-function SeverityBreakdown({ report }: { report: Report }) {
-  const counts = severityCounts(report);
-  const total = SEVERITY_ORDER.reduce((n, k) => n + counts[k], 0);
-  if (total === 0) return null;
-  const present = SEVERITY_ORDER.filter((k) => counts[k] > 0);
-
-  return (
-    <div className="border border-line bg-panel p-4">
-      <div className="mb-3 flex items-baseline justify-between">
-        <p className="kicker">Issues by severity</p>
-        <p className="font-mono text-xs text-faint">{total} total</p>
-      </div>
-      <div className="flex h-2.5 w-full overflow-hidden bg-line">
-        {present.map((k) => (
-          <div
-            key={k}
-            className={SEVERITY_STYLE[k].bar}
-            style={{ width: `${(counts[k] / total) * 100}%` }}
-            title={`${counts[k]} ${SEVERITY_STYLE[k].label}`}
-          />
-        ))}
-      </div>
-      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
-        {present.map((k) => (
-          <div key={k} className="flex items-center gap-2">
-            <span className={`inline-block h-2 w-2 shrink-0 ${SEVERITY_STYLE[k].bar}`} />
-            <span className="font-mono text-xs">
-              <span className={`font-semibold ${SEVERITY_STYLE[k].text}`}>{counts[k]}</span>{' '}
-              <span className="text-muted">{SEVERITY_STYLE[k].label}</span>
-            </span>
-          </div>
-        ))}
-      </div>
-      {counts.critical > 0 && (
-        <p className="mt-3 text-xs leading-relaxed text-faint">
-          Start with the {counts.critical} critical {counts.critical === 1 ? 'issue' : 'issues'} — those are
-          the ones a stranger can act on right now.
-        </p>
-      )}
-    </div>
-  );
-}
-
-/**
- * A proportional pass/fail bar. Pure CSS — no chart library, which keeps the
- * bundle small and matches the rest of the type. It encodes the same numbers
- * shown as text, so it adds a read-at-a-glance layer without inventing data.
- */
-function PassBar({ passed, total, className = '' }: { passed: number; total: number; className?: string }) {
-  if (total <= 0) return null;
-  const pct = Math.round((passed / total) * 100);
-  return (
-    <div className={`flex h-1.5 w-full overflow-hidden bg-line ${className}`} role="img" aria-label={`${passed} of ${total} checks passed`}>
-      <div className="bg-safe transition-all duration-500" style={{ width: `${pct}%` }} />
-      <div className="bg-danger transition-all duration-500" style={{ width: `${100 - pct}%` }} />
-    </div>
-  );
-}
 
 /** One ✓/✗ row, with its fix inline when it failed. */
 function CheckRow({ c, categoryKey }: { c: CheckItem; categoryKey: string }) {
@@ -205,34 +127,6 @@ function CategoryList({ categories }: { categories: ReportCategory[] }) {
   );
 }
 
-/** Every category at a glance — the whole report in one screen, before any scrolling. */
-function GradeGrid({ categories }: { categories: ReportCategory[] }) {
-  return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-      {categories.map((c) => {
-        const fails = c.checks.filter((x) => !x.pass).length;
-        return (
-          <div
-            key={c.key}
-            className={`border bg-panel px-3 py-2.5 ${fails > 0 ? 'border-danger/40' : 'border-line'}`}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <p className="font-mono text-[11px] uppercase leading-tight tracking-wide text-muted">{c.label}</p>
-              <span className={`shrink-0 font-mono text-sm font-semibold ${tone(c.grade).split(' ')[0]}`}>
-                {c.grade ?? '—'}
-              </span>
-            </div>
-            <p className={`mt-1 font-mono text-[11px] ${fails > 0 ? 'text-danger' : 'text-faint'}`}>
-              {fails > 0 ? `${fails} to fix` : 'all clear'}
-            </p>
-            <PassBar passed={c.checks.length - fails} total={c.checks.length} className="mt-2" />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function downloadSbom(result: RepoScanResult): void {
   const deps = result.dependencies ?? [];
   if (deps.length === 0) return;
@@ -274,14 +168,12 @@ function RepoReport({ result, onReset }: { result: RepoScanResult; onReset: () =
   return (
     <section>
       <div className={`border bg-panel ${result.findings.length > 0 ? 'border-danger/40' : 'border-safe/40'}`}>
-        <div className="flex items-stretch">
-          <div className={`flex w-24 shrink-0 items-center justify-center border-r font-mono text-6xl font-semibold sm:w-32 sm:text-7xl ${tone(result.grade)}`}>
-            {result.grade}
-          </div>
-          <div className="flex min-w-0 flex-col justify-center px-5 py-5">
+        <div className="flex flex-col items-center gap-5 p-6 text-center sm:flex-row sm:items-center sm:gap-7 sm:text-left">
+          <ScoreDial grade={result.grade} />
+          <div className="flex min-w-0 flex-1 flex-col justify-center">
             <p className="kicker mb-1.5">Repo scan</p>
             <p className="truncate font-mono text-xs text-faint">{result.ref}</p>
-            <p className="mt-1.5 font-display text-lg leading-snug text-ink">{result.summary}</p>
+            <p className="mt-1.5 font-display text-lg leading-snug text-ink sm:text-xl">{result.summary}</p>
           </div>
         </div>
       </div>
@@ -869,22 +761,16 @@ export default function Home() {
         <section>
           {/* the headline — this is the screenshot people share */}
           <div className={`border bg-panel ${report.issueCount > 0 ? 'border-danger/40' : 'border-safe/40'}`}>
-            <div className="flex items-stretch">
-              <div
-                className={`flex w-24 shrink-0 items-center justify-center border-r font-mono text-6xl font-semibold sm:w-32 sm:text-7xl ${tone(
-                  report.overallGrade,
-                )}`}
-              >
-                {report.overallGrade}
-              </div>
-              <div className="flex min-w-0 flex-col justify-center px-5 py-5">
-                <p className="kicker mb-1.5">Security grade</p>
+            <div className="flex flex-col items-center gap-5 p-6 text-center sm:flex-row sm:items-center sm:gap-7 sm:text-left">
+              <ScoreDial grade={report.overallGrade} />
+              <div className="flex min-w-0 flex-1 flex-col justify-center">
+                <p className="kicker mb-2">Security grade</p>
                 {appUrl.trim() && (
-                  <p className="mb-1.5 truncate font-mono text-xs text-faint">
+                  <p className="mb-2 truncate font-mono text-xs text-faint">
                     {appUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '')}
                   </p>
                 )}
-                <p className="font-display text-lg leading-snug text-ink sm:text-xl">{report.verdict}</p>
+                <p className="font-display text-xl leading-snug text-ink sm:text-2xl">{report.verdict}</p>
               </div>
             </div>
             {/* one honest metric row, not a dashboard */}
@@ -914,16 +800,17 @@ export default function Home() {
             </p>
           )}
 
-          {/* everything at a glance, before any scrolling */}
-          <div className="mt-3">
-            <GradeGrid categories={report.categories} />
-          </div>
-
+          {/* how bad is it — the shape of the damage, before the where and the what */}
           {report.issueCount > 0 && (
             <div className="mt-3">
-              <SeverityBreakdown report={report} />
+              <SeverityBar report={report} />
             </div>
           )}
+
+          {/* every category at a glance — failing tiles first, before any scrolling */}
+          <div className="mt-3">
+            <CategoryMatrix categories={report.categories} />
+          </div>
 
           {/* security categories — the headline */}
           <div className="mt-6">
