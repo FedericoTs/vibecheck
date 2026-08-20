@@ -22,8 +22,22 @@ function Shell({ children }: { children: React.ReactNode }) {
         color: INK,
         padding: '68px 72px',
         fontFamily: 'sans-serif',
+        position: 'relative',
       }}
     >
+      {/* mesh accent — soft brand-colour glow on the right, masked out before it reaches the text */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: 'flex',
+          background:
+            'linear-gradient(90deg, #0b0b0d 24%, rgba(11,11,13,0) 60%), radial-gradient(760px 760px at 100% 12%, rgba(72,201,139,0.22), rgba(72,201,139,0) 60%), radial-gradient(620px 620px at 92% 96%, rgba(242,86,91,0.16), rgba(242,86,91,0) 58%), radial-gradient(520px 520px at 72% 52%, rgba(230,178,94,0.10), rgba(230,178,94,0) 60%)',
+        }}
+      />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontSize: 42, fontWeight: 700, letterSpacing: -1 }}>vibecheck</div>
         <div style={{ fontSize: 20, letterSpacing: 4, color: MUTED }}>SECURITY REPORT CARD</div>

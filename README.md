@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="media/mark.svg" width="72" alt="vibecheck logo" />
+
 # vibecheck
 
 **Is your AI-built app leaking? Paste a URL — get a security report card in seconds.**
