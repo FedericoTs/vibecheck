@@ -9,6 +9,11 @@ const MUTED = '#8b8b95';
 const LINE = '#212127';
 const DANGER = '#f2565b';
 
+// Cache the OG image at the edge. It's deterministic per URL (grade + issue count),
+// so crawlers — Twitterbot, iMessage, Slack, Discord — get an instant CDN hit instead
+// of re-rendering (~1.8s) on every fetch, which also makes card previews more reliable.
+const OG_CACHE = 'public, max-age=0, s-maxage=86400, stale-while-revalidate=604800';
+
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -85,7 +90,7 @@ export function GET(req: Request): ImageResponse {
           </div>
         </Shell>
       ),
-      { width: 1200, height: 630 },
+      { width: 1200, height: 630, headers: { 'cache-control': OG_CACHE } },
     );
   }
 
