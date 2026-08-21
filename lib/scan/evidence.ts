@@ -90,16 +90,48 @@ export function routeEvidence(host: string, path: string): CheckEvidence | null 
 }
 
 /**
- * A missing response header. Proving an ABSENCE is the one case where the value
- * of the command is that it prints nothing.
+ * Header checks, mapped to the request that actually tests them.
+ *
+ * NOT every check key is a wire header name. `csp-effective`, `cors` and
+ * `cookie-flags` are our own labels for judgements about a DIFFERENT header, and
+ * `x-powered-by` is inverted — it fails when the header is PRESENT.
+ *
+ * Getting this wrong is not a cosmetic bug. Grepping for a header named
+ * "csp-effective" prints nothing on every site in the world, so pairing it with
+ * "no output means the header is not being sent" would manufacture proof for a
+ * finding the command cannot test. That is the exact failure this whole evidence
+ * layer exists to prevent, so each key is mapped explicitly and anything
+ * unrecognised gets no evidence at all.
  */
-export function headerEvidence(host: string, headerKey: string): CheckEvidence | null {
+const HEADER_EVIDENCE: Record<string, { header: string; kind: 'absent' | 'present' | 'value' }> = {
+  'content-security-policy': { header: 'content-security-policy', kind: 'absent' },
+  'strict-transport-security': { header: 'strict-transport-security', kind: 'absent' },
+  'x-frame-options': { header: 'x-frame-options', kind: 'absent' },
+  'x-content-type-options': { header: 'x-content-type-options', kind: 'absent' },
+  'referrer-policy': { header: 'referrer-policy', kind: 'absent' },
+  // Fails when PRESENT: it advertises your stack.
+  'x-powered-by': { header: 'x-powered-by', kind: 'present' },
+  // Judgements about another header — show the value we judged.
+  'csp-effective': { header: 'content-security-policy', kind: 'value' },
+  cors: { header: 'access-control-allow-origin', kind: 'value' },
+  'cookie-flags': { header: 'set-cookie', kind: 'value' },
+};
+
+const HEADER_LABEL: Record<'absent' | 'present' | 'value', string> = {
+  absent: 'Run this yourself — no output means the header is not being sent',
+  present: 'Run this yourself — any output means it is being sent',
+  value: 'Run this yourself — this is the exact value we judged',
+};
+
+export function headerEvidence(host: string, checkKey: string): CheckEvidence | null {
+  const mapped = HEADER_EVIDENCE[checkKey];
+  if (!mapped) return null;
   const url = originUrl(host);
   const quoted = url && shellQuote(url);
-  const key = shellQuote(`^${headerKey}:`);
+  const key = shellQuote(`^${mapped.header}:`);
   if (!quoted || !key) return null;
   return {
-    label: 'Run this yourself — no output means the header is not being sent',
+    label: HEADER_LABEL[mapped.kind],
     command: `curl -sI ${quoted} | grep -i ${key}`,
   };
 }

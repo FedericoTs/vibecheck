@@ -63,6 +63,32 @@ describe('evidence builders', () => {
     expect(e?.label).toMatch(/no output/i);
   });
 
+  /**
+   * Not every check key is a wire header. Grepping for a header named
+   * "csp-effective" prints nothing on every site alive, so pairing it with "no
+   * output means it is missing" would manufacture proof for something the
+   * command cannot test.
+   */
+  it('maps a judgement key to the header it is actually about', () => {
+    const csp = headerEvidence('example.com', 'csp-effective');
+    expect(csp?.command).toContain("'^content-security-policy:'");
+    expect(csp?.command).not.toContain('csp-effective');
+    expect(csp?.label).toMatch(/exact value/i);
+
+    expect(headerEvidence('example.com', 'cors')?.command).toContain("'^access-control-allow-origin:'");
+    expect(headerEvidence('example.com', 'cookie-flags')?.command).toContain("'^set-cookie:'");
+  });
+
+  it('does not claim absence for a check that fails on PRESENCE', () => {
+    const e = headerEvidence('example.com', 'x-powered-by');
+    expect(e?.label).toMatch(/any output means it is being sent/i);
+    expect(e?.label).not.toMatch(/no output/i);
+  });
+
+  it('emits nothing for a key it does not recognise', () => {
+    expect(headerEvidence('example.com', 'some-future-check')).toBe(null);
+  });
+
   it('builds the right DNS lookup for each record', () => {
     expect(dnsEvidence('example.com', 'spf')?.command).toBe("dig +short TXT 'example.com'");
     expect(dnsEvidence('https://example.com/x', 'dmarc')?.command).toBe("dig +short TXT '_dmarc.example.com'");
