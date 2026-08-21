@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findSupabaseUrls, findAnonKeys, discoverSupabase } from './discover';
+import { findSupabaseUrls, findAnonKeys, discoverSupabase, findBackendPairs, isProbeableKey } from './discover';
 
 const b64url = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const jwt = (payload: object) => `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(payload)}.sigsigsig`;
@@ -38,6 +38,7 @@ describe('discoverSupabase', () => {
   it('pairs the URL + anon key from a real-looking bundle', () => {
     expect(discoverSupabase(BUNDLE)).toEqual({
       url: 'https://abcdefghijkl.supabase.co',
+      pairing: 'supabase-host',
       anonKey: ANON,
     });
   });
@@ -66,5 +67,69 @@ describe('discoverSupabase', () => {
   it('never returns the privileged sb_secret_ key to probe with', () => {
     const withSecret = 'https://abcdefghijkl.supabase.co "sb_secret_' + 'B'.repeat(30) + '"';
     expect(discoverSupabase(withSecret)).toBe(null);
+  });
+});
+
+describe('findBackendPairs — the exfiltration guard', () => {
+  const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIn0.sigsigsig';
+
+  it('supports a self-hosted or custom-domain backend when the code pairs them', () => {
+    const bundle = `const supabase = createClient("https://db.mycompany.com", "${ANON}");`;
+    expect(findBackendPairs(bundle)).toEqual([
+      { url: 'https://db.mycompany.com', anonKey: ANON, pairing: 'create-client' },
+    ]);
+  });
+
+  /**
+   * The reason the loose "first URL + first key" pairing was only ever safe
+   * while the host pattern was pinned to *.supabase.co. Unpinned, it would
+   * post the user's credential to whatever unrelated origin happened to appear
+   * first in their bundle.
+   */
+  it('never points a key at an unrelated origin that merely appears nearby', () => {
+    const bundle = `
+      const analytics = "https://api.some-third-party.com/collect";
+      const cdn = "https://cdn.example.net/app.js";
+      const KEY = "${ANON}";
+    `;
+    expect(findBackendPairs(bundle)).toEqual([]);
+    expect(discoverSupabase(bundle)).toBe(null);
+  });
+
+  it('still pairs a hosted Supabase project found anywhere in the bundle', () => {
+    const bundle = `
+      fetch("https://api.some-third-party.com/collect");
+      const url = "https://abcdefghijkl.supabase.co";
+      const key = "${ANON}";
+    `;
+    const pairs = findBackendPairs(bundle);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0].url).toBe('https://abcdefghijkl.supabase.co');
+    expect(pairs[0].pairing).toBe('supabase-host');
+  });
+
+  it('prefers the explicit createClient pairing over the looser one', () => {
+    const bundle = `
+      const url = "https://abcdefghijkl.supabase.co";
+      createClient("https://db.mycompany.com", "${ANON}");
+      const key = "${ANON}";
+    `;
+    expect(findBackendPairs(bundle)[0].pairing).toBe('create-client');
+    expect(discoverSupabase(bundle)!.url).toBe('https://db.mycompany.com');
+  });
+
+  it('refuses to probe with a privileged key, however it is paired', () => {
+    const secret = 'sb_secret_abcdefghijklmnopqrstuvwxyz';
+    expect(isProbeableKey(secret)).toBe(false);
+    expect(findBackendPairs(`createClient("https://db.mycompany.com", "${secret}")`)).toEqual([]);
+
+    const service =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.sigsigsig';
+    expect(isProbeableKey(service)).toBe(false);
+    expect(findBackendPairs(`createClient("https://db.mycompany.com", "${service}")`)).toEqual([]);
+  });
+
+  it('ignores a non-http origin', () => {
+    expect(findBackendPairs(`createClient("file:///etc/passwd", "${ANON}")`)).toEqual([]);
   });
 });

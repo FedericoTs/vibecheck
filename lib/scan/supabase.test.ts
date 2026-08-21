@@ -1,14 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  normalizeSupabaseUrl,
-  parseTablesFromOpenApi,
-  parseCountHeader,
-  isExposed,
-  parseRpcFromOpenApi,
-  classifyBuckets,
-  classifyAuthConfig,
-  scanSupabase,
-} from './supabase';
+import { normalizeSupabaseUrl, parseTablesFromOpenApi, parseCountHeader, isExposed, parseRpcFromOpenApi, classifyBuckets, classifyAuthConfig, scanSupabase, looksLikeApiSpec } from './supabase';
 import type { Fetchy } from './types';
 
 // ── pure helpers ─────────────────────────────────────────────────────
@@ -91,7 +82,9 @@ function mockFetch(routes: Array<[string, () => Response]>): Fetchy {
   };
 }
 
-const SWAGGER = { paths: { '/': {}, '/users': {}, '/posts': {}, '/secrets': {}, '/rpc/x': {} } };
+// Shaped like a real PostgREST response, which always carries the Swagger
+// version. A fixture that omits it cannot catch a guard that requires it.
+const SWAGGER = { swagger: '2.0', paths: { '/': {}, '/users': {}, '/posts': {}, '/secrets': {}, '/rpc/x': {} } };
 
 describe('scanSupabase', () => {
   it('flags the tables the anon key can actually read, grades F', async () => {
@@ -137,5 +130,31 @@ describe('scanSupabase', () => {
   it('missing inputs fail with guidance, not a crash', async () => {
     expect((await scanSupabase({ url: '', anonKey: 'x' })).error).toMatch(/URL/);
     expect((await scanSupabase({ url: 'abc.supabase.co', anonKey: '' })).error).toMatch(/anon/i);
+  });
+});
+
+describe('looksLikeApiSpec — checking nothing must not look like checking', () => {
+  it('accepts a real PostgREST description', () => {
+    expect(looksLikeApiSpec({ swagger: '2.0', paths: { '/': {}, '/users': {} } })).toBe(true);
+    expect(looksLikeApiSpec({ openapi: '3.0.0', paths: {} })).toBe(true);
+  });
+
+  it('rejects unrelated JSON that merely returned 200', () => {
+    expect(looksLikeApiSpec({ message: 'hello' })).toBe(false);
+    expect(looksLikeApiSpec({ paths: { '/users': {} } })).toBe(false); // no version
+    expect(looksLikeApiSpec({ swagger: '2.0' })).toBe(false); // no paths
+    expect(looksLikeApiSpec(null)).toBe(false);
+    expect(looksLikeApiSpec('<!doctype html>')).toBe(false);
+  });
+
+  it('reports unknown rather than a clean pass when the origin is not PostgREST', async () => {
+    const fetchy = (async () =>
+      ({ ok: true, status: 200, json: async () => ({ message: 'hello' }) }) as unknown as Response) as never;
+    const r = await scanSupabase({ url: 'https://db.mycompany.com', anonKey: 'sb_publishable_abcdefghijklmnop', fetch: fetchy });
+    expect(r.ok).toBe(false);
+    expect(r.findings).toEqual([]);
+    expect(r.summary).toMatch(/not checked/i);
+    // The dangerous rendering would be "no tables reachable" — i.e. a pass.
+    expect(r.summary).not.toMatch(/no tables/i);
   });
 });

@@ -43,6 +43,23 @@ export function parseTablesFromOpenApi(doc: unknown): string[] {
   return [...new Set(out)].sort();
 }
 
+/**
+ * Did that origin answer with an actual API description?
+ *
+ * Once custom-domain and self-hosted backends are in scope, the URL alone no
+ * longer guarantees what is on the other end. Any origin can return 200 with
+ * some unrelated JSON, and `parseTablesFromOpenApi` would then find no table
+ * paths and yield an empty finding list — which the report renders as "No
+ * tables reachable to test", a PASS. Checking nothing must never look like
+ * checking successfully, so an unrecognisable response is an explicit unknown.
+ */
+export function looksLikeApiSpec(doc: unknown): boolean {
+  if (!doc || typeof doc !== 'object') return false;
+  const d = doc as { swagger?: unknown; openapi?: unknown; paths?: unknown };
+  const versioned = typeof d.swagger === 'string' || typeof d.openapi === 'string';
+  return versioned && !!d.paths && typeof d.paths === 'object';
+}
+
 /** Total row count from a PostgREST `content-range: 0-0/N` (or `* /N`) header. */
 export function parseCountHeader(contentRange: string | null): number | null {
   if (!contentRange) return null;
@@ -208,6 +225,12 @@ export async function scanSupabase(opts: ScanOpts): Promise<SupabaseScanResult> 
       );
     }
     const doc = await res.json();
+    if (!looksLikeApiSpec(doc)) {
+      return blank(
+        host,
+        'That address answered, but not with a PostgREST API description — so the database was not checked. This is not a clean result.',
+      );
+    }
     tables = parseTablesFromOpenApi(doc);
     rpc = { exposed: parseRpcFromOpenApi(doc), checked: true };
   } catch {

@@ -13,9 +13,13 @@ import { jwtRole } from './secrets';
  * database from its servers — the thing every competing scanner does.
  */
 
+/** How we concluded that a key belongs to a particular origin. */
+export type Pairing = 'create-client' | 'supabase-host';
+
 export interface DiscoveredSupabase {
   url: string;
   anonKey: string;
+  pairing: Pairing;
 }
 
 const PROJECT_URL = /https?:\/\/([a-z0-9]{8,})\.supabase\.(?:co|in)/gi;
@@ -47,9 +51,75 @@ export function findAnonKeys(text: string): string[] {
   return [...out];
 }
 
+/**
+ * `createClient(url, key)` — the app itself stating which origin the key is for.
+ *
+ * This is the ONLY evidence strong enough to point a key at an origin we do not
+ * otherwise recognise, and it is what makes self-hosted and custom-domain
+ * PostgREST safe to support.
+ */
+const CREATE_CLIENT =
+  /createClient\s*\(\s*["'`](https?:\/\/[^"'`\s)]+)["'`]\s*,\s*["'`]([A-Za-z0-9._-]{20,})["'`]/g;
+
+/** Is this a key we are allowed to probe with? Never a secret or service_role one. */
+export function isProbeableKey(key: string): boolean {
+  if (/^sb_secret_/.test(key)) return false;
+  if (/^sb_publishable_[A-Za-z0-9_-]{16,}$/.test(key)) return true;
+  return jwtRole(key) === 'anon';
+}
+
+/** The scheme + host of a URL, or null if it is not a plain http(s) URL. */
+function safeOrigin(raw: string): string | null {
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+    return u.origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every (origin, key) pair the bundle actually supports, most-trustworthy first.
+ *
+ * ⚠️ THE SAFETY RULE THIS ENFORCES ⚠️
+ * A bundle routinely references many origins — analytics, a CDN, third-party
+ * APIs. Taking "the first URL" and "the first key" and pairing them, which is
+ * what this module used to do, is only safe while the URL pattern is pinned to
+ * `*.supabase.co`: the blast radius is a Supabase host, and a Supabase key can
+ * only be for a Supabase project. The moment arbitrary origins are allowed,
+ * that same logic would send the user's credential to whatever unrelated host
+ * happened to appear first in their bundle. That is not a scan, it is
+ * exfiltration, and we would be doing it on their behalf.
+ *
+ * So an origin we do not recognise is only ever paired with a key when the code
+ * itself put them together in one `createClient(url, key)` call.
+ */
+export function findBackendPairs(text: string): DiscoveredSupabase[] {
+  const out: DiscoveredSupabase[] = [];
+  const seen = new Set<string>();
+  const push = (rawUrl: string, anonKey: string, pairing: Pairing): void => {
+    const url = safeOrigin(rawUrl);
+    if (!url || !isProbeableKey(anonKey)) return;
+    const id = `${url}|${anonKey}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push({ url, anonKey, pairing });
+  };
+
+  // 1. The app told us, in one expression. Works for any host.
+  for (const m of text.matchAll(CREATE_CLIENT)) push(m[1], m[2], 'create-client');
+
+  // 2. A *.supabase.co origin. The host itself bounds the risk, so the looser
+  //    "both appear in this bundle" pairing stays acceptable here.
+  const hosted = findSupabaseUrls(text)[0];
+  const key = findAnonKeys(text)[0];
+  if (hosted && key) push(hosted, key, 'supabase-host');
+
+  return out;
+}
+
 /** Pair a project URL with an anon key, if the page exposes both. */
 export function discoverSupabase(text: string): DiscoveredSupabase | null {
-  const url = findSupabaseUrls(text)[0];
-  const anonKey = findAnonKeys(text)[0];
-  return url && anonKey ? { url, anonKey } : null;
+  return findBackendPairs(text)[0] ?? null;
 }

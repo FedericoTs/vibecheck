@@ -1231,9 +1231,11 @@ export default function Home() {
               <p className="font-mono text-xs text-warn">Your database was not checked</p>
               <p className="mt-1 text-xs leading-relaxed text-faint">
                 We look for backend configuration in the JavaScript your app serves, and found none.
-                That means one of: you don&rsquo;t use a hosted database; you use a provider we
-                don&rsquo;t recognise yet; or your Supabase sits behind a custom domain or is
-                self-hosted, which we only detect at <span className="text-muted">*.supabase.co</span>.
+                We can read a <span className="text-muted">*.supabase.co</span> project, and any
+                self-hosted or custom-domain backend your code names directly in a{' '}
+                <span className="text-muted">createClient(url, key)</span> call. If your app builds
+                that URL at runtime, or uses a provider we don&rsquo;t recognise yet, we cannot
+                find it.
                 <span className="text-ink"> This grade says nothing about your database</span> — not
                 checked is not the same as clean.
               </p>
