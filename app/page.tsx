@@ -7,7 +7,7 @@ import { scanSupabase } from '@/lib/scan/supabase';
 import { scanFirebase, extractCollections, firebaseConfigFromText, type FirebaseConfig } from '@/lib/scan/firebase';
 import { unzipSync } from 'fflate';
 import { extractScannableText, analyzeBinaryText } from '@/lib/scan/binary';
-import { combineReport, type Report, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
+import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
 import { buildScanOutcome, buildRepoOutcome } from '@/lib/scan/telemetry';
 import { buildFixPrompt, buildRepoFixPrompt, fixFor } from '@/lib/scan/fixes';
 import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals, CrawlerMatrix } from '@/components/report-visuals';
@@ -522,15 +522,22 @@ export default function Home() {
   // or a row count, so "we never see your app" stays literally true. The rule is
   // enforced in lib/scan/telemetry.ts, not merely observed here.
   //
-  // The refs make it exactly one event per scan: `inputs` is in the dependency
-  // list (it is read, so it must be), and it is written a second time when the
-  // Lighthouse result lands late.
+  // EXACTLY ONE event per scan. `report` is a useMemo over `inputs`, and `inputs`
+  // is written a second time when the Lighthouse result lands late — so keying on
+  // the report object counted a scan twice whenever Lighthouse succeeded, which
+  // would inflate the denominator AND bias it toward sites Lighthouse can reach.
+  // Instead we arm on report === null, which every scan start already does by
+  // calling setInputs(null), and disarm on the first report that follows.
   const lastMode = useRef<'url' | 'backend' | 'mobile'>('url');
-  const countedReport = useRef<Report | null>(null);
+  const countedReport = useRef(false);
   const countedRepo = useRef<RepoScanResult | null>(null);
   useEffect(() => {
-    if (!report || countedReport.current === report) return;
-    countedReport.current = report;
+    if (!report) {
+      countedReport.current = false; // a scan is starting; arm for the next result
+      return;
+    }
+    if (countedReport.current) return;
+    countedReport.current = true;
     track('scan_completed', buildScanOutcome(lastMode.current, report, inputs));
   }, [report, inputs]);
   useEffect(() => {

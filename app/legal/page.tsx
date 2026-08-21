@@ -27,7 +27,7 @@ export default function LegalPage() {
 
       <h1 className="font-display text-4xl font-semibold tracking-tight">Terms &amp; privacy</h1>
       <p className="mt-4 text-sm text-faint">
-        Plain language, because that&rsquo;s the whole point of the tool. Last updated 20 August 2026.
+        Plain language, because that&rsquo;s the whole point of the tool. Last updated 21 August 2026.
       </p>
 
       <Section title="How it works">
