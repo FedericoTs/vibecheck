@@ -180,7 +180,14 @@ export interface RepoScanResult {
    * token, without ever exposing the token itself.
    */
   rateLimit?: { limit: number; remaining: number; reset: number; authenticated: boolean } | null;
-  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  /** Files the tree listed that we could not read. Non-zero means partial coverage. */
+  unreadableFiles?: number;
+  /**
+   * 'unknown' when too much of the repo could not be read to stand behind any
+   * grade. It must never render as a pass — that is the whole point of it
+   * existing.
+   */
+  grade: 'A' | 'B' | 'C' | 'D' | 'F' | 'unknown';
   summary: string;
   error?: string;
 }

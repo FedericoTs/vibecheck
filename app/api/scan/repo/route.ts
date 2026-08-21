@@ -83,17 +83,52 @@ async function fetchJson(url: string): Promise<{ status: number; body: unknown }
   return { status: res.status, body };
 }
 
-async function fetchRaw(owner: string, repo: string, branch: string, path: string): Promise<string> {
+/**
+ * The outcome of reading one file. A failure MUST be distinguishable from an
+ * empty file.
+ *
+ * Returning '' for both produced the worst bug in this route: a throttled
+ * raw.githubusercontent.com made every fetch look like an empty file, every
+ * scanner found nothing, and the report rendered a green dial, a green border
+ * and "0 source file(s) scanned, nothing found ✓". A totally failed scan
+ * presented as a clean bill of health.
+ */
+type RawResult =
+  | { ok: true; text: string }
+  | { ok: false; reason: 'rate_limited' | 'anomaly' | 'timeout' | 'error'; status: number };
+
+/**
+ * NB: no Authorization header, deliberately.
+ *
+ * raw.githubusercontent.com honours Authorization — that is how private-repo
+ * raw works — but an invalid, expired or truncated token does NOT degrade to
+ * anonymous: GitHub 404s instead, to avoid disclosing existence. Adding a token
+ * here would turn every public scan into "0 files, grade A" the moment it went
+ * stale. Anonymous is the correct path for public repos.
+ */
+async function fetchRawResult(owner: string, repo: string, branch: string, path: string): Promise<RawResult> {
   try {
     const res = await fetch(
       `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(branch)}/${path.split('/').map(encodeURIComponent).join('/')}`,
       { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(8_000) },
     );
-    if (!res.ok) return '';
-    return (await res.text()).slice(0, MAX_FILE_BYTES);
-  } catch {
-    return '';
+    // A zero-byte 200 is a successful read of an empty file, not a failure.
+    if (res.ok) return { ok: true, text: (await res.text()).slice(0, MAX_FILE_BYTES) };
+    if (res.status === 429 || res.status === 403) return { ok: false, reason: 'rate_limited', status: res.status };
+    // A 404 is an ANOMALY, not absence: the git-tree API just told us this blob
+    // exists, so it going missing means something failed on the way.
+    if (res.status === 404) return { ok: false, reason: 'anomaly', status: 404 };
+    return { ok: false, reason: 'error', status: res.status };
+  } catch (e) {
+    const timedOut = e instanceof Error && /abort|timeout/i.test(`${e.name} ${e.message}`);
+    return { ok: false, reason: timedOut ? 'timeout' : 'error', status: 0 };
   }
+}
+
+/** Text-or-empty wrapper, for call sites that only need the content. */
+async function fetchRaw(owner: string, repo: string, branch: string, path: string): Promise<string> {
+  const r = await fetchRawResult(owner, repo, branch, path);
+  return r.ok ? r.text : '';
 }
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
@@ -111,7 +146,9 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R
 }
 
 function fail(ref: string, error: string, status = 400): Response {
-  return NextResponse.json({ ok: false, ref, filesScanned: 0, findings: [], grade: 'A', summary: error, error } as RepoScanResult, { status });
+  // grade 'unknown', never 'A' — an error path must not carry a passing grade
+  // even if the client currently gates on ok:false.
+  return NextResponse.json({ ok: false, ref, filesScanned: 0, findings: [], grade: 'unknown', summary: error, error } as RepoScanResult, { status });
 }
 
 const DEP_MANIFESTS = ['package-lock.json', 'package.json', 'requirements.txt'];
@@ -259,12 +296,29 @@ export async function POST(request: Request): Promise<Response> {
   if (treeRes.status !== 200) return fail(refStr, 'Could not read the repository file tree.', 502);
   const tree = ((treeRes.body as { tree?: TreeEntry[] })?.tree ?? []).filter((e) => e && e.type === 'blob');
   const paths = selectFiles(tree, MAX_FILES);
-  if (paths.length === 0) return NextResponse.json({ ok: true, ref: refStr, filesScanned: 0, findings: [], grade: 'A', summary: 'No scannable source files found.' } as RepoScanResult);
+  if (paths.length === 0)
+    return NextResponse.json({
+      ok: true,
+      ref: refStr,
+      filesScanned: 0,
+      findings: [],
+      grade: 'unknown',
+      summary: 'No scannable source files found in this repository.',
+    } as RepoScanResult);
 
   // 3) fetch contents + analyse
-  const files = (await mapLimit(paths, CONCURRENCY, async (p) => ({ path: p, content: await fetchRaw(ref.owner, ref.repo, branch, p) }))).filter(
-    (f) => f.content.length > 0,
-  );
+  const reads = await mapLimit(paths, CONCURRENCY, async (p) => ({ path: p, result: await fetchRawResult(ref.owner, ref.repo, branch, p) }));
+  const files = reads
+    .filter((r): r is { path: string; result: { ok: true; text: string } } => r.result.ok)
+    .map((r) => ({ path: r.path, content: r.result.text }));
+
+  // Count what FAILED, never what came back empty. A zero-byte file is a
+  // successful read — empty __init__.py files are idiomatic and ubiquitous in
+  // Python packages, so gating on "how many files had content" would grade a
+  // perfectly good Django or FastAPI repo as unreadable.
+  const failures = reads.filter((r) => !r.result.ok).map((r) => r.result as Extract<RawResult, { ok: false }>);
+  const rateLimited = failures.filter((f) => f.reason === 'rate_limited' || f.reason === 'anomaly').length;
+  const unreadable = failures.length;
   const [sourceFindings, depResult, dockerFindings] = await Promise.all([
     Promise.resolve(analyzeRepoFiles(files)),
     scanDependencies(ref.owner, ref.repo, branch, tree),
@@ -272,7 +326,11 @@ export async function POST(request: Request): Promise<Response> {
   ]);
   const findings = [...sourceFindings, ...dockerFindings, ...depResult.findings];
   const depFindings = depResult.findings;
-  const grade = gradeRepo(findings);
+
+  // If we could not actually read the repo, say so. Grading a scan that fetched
+  // nothing is the false pass this whole change exists to prevent.
+  const tooManyFailed = rateLimited > 0 || unreadable > paths.length * 0.2;
+  const grade = tooManyFailed ? 'unknown' : gradeRepo(findings);
 
   return NextResponse.json({
     ok: true,
@@ -281,9 +339,11 @@ export async function POST(request: Request): Promise<Response> {
     findings,
     dependencies: depResult.deps,
     rateLimit: lastRateLimit,
+    unreadableFiles: unreadable,
     grade,
-    summary:
-      findings.length === 0
+    summary: tooManyFailed
+      ? `GitHub would not serve ${unreadable} of ${paths.length} files, so this scan is incomplete — no grade. Try again in a few minutes.`
+      : findings.length === 0
         ? `${files.length} source file(s) + dependencies scanned — nothing found ✅`
         : `${findings.length} issue(s) found${depFindings.length ? ` (${depFindings.length} in dependencies)` : ''} ⚠️`,
   } as RepoScanResult);

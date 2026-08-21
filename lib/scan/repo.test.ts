@@ -198,3 +198,37 @@ describe('REGRESSIONS from the repo-mode audit — real repos that were graded F
     expect(looksLikePatternCatalog('const key = process.env.STRIPE_SECRET_KEY;')).toBe(false);
   });
 });
+
+describe('an unreadable scan must never grade as a pass', () => {
+  // Mirrors the route's rule so the intent is pinned even though the counting
+  // lives in the handler: gate on FAILURES, never on how many files had bytes.
+  const decide = (paths: number, failures: number, rateLimited: number) =>
+    rateLimited > 0 || failures > paths * 0.2 ? 'unknown' : gradeRepo([]);
+
+  it('is unknown when GitHub throttled us, even once', () => {
+    // A 429/403 on any file means coverage is not what it appears.
+    expect(decide(60, 1, 1)).toBe('unknown');
+    expect(decide(60, 60, 60)).toBe('unknown');
+  });
+
+  it('is unknown when a large share of files simply failed', () => {
+    expect(decide(60, 20, 0)).toBe('unknown');
+  });
+
+  it('a repo full of EMPTY files still grades normally', () => {
+    // The trap in the obvious fix: gating on "files with content" would mark a
+    // normal Python package unknown, because empty __init__.py files are
+    // idiomatic and ubiquitous. Zero bytes is a successful read.
+    expect(decide(60, 0, 0)).toBe('A');
+    const emptyPkg = [
+      { path: 'app/__init__.py', content: '' },
+      { path: 'app/models/__init__.py', content: '' },
+      { path: 'app/api/routes.py', content: 'def index(): return {}' },
+    ];
+    expect(gradeRepo(analyzeRepoFiles(emptyPkg))).toBe('A');
+  });
+
+  it('a couple of failures out of sixty is still gradeable', () => {
+    expect(decide(60, 2, 0)).toBe('A');
+  });
+});

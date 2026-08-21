@@ -176,6 +176,8 @@ function RepoReport({ result, onReset }: { result: RepoScanResult; onReset: () =
   const [badgeMdCopied, setBadgeMdCopied] = useState(false);
   // A repo scan reads the default branch at one moment, so the badge is stamped.
   const repoBadgeDate = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  // Too much of the repo was unreadable to stand behind any grade.
+  const incomplete = result.grade === 'unknown';
 
   function copyPrompt(): void {
     track('repo_fix_prompt_copied', { grade: result.grade, issues: result.findings.length });
@@ -200,18 +202,42 @@ function RepoReport({ result, onReset }: { result: RepoScanResult; onReset: () =
 
   return (
     <section>
-      <div className={`border bg-panel ${result.findings.length > 0 ? 'border-danger/40' : 'border-safe/40'}`}>
+      {/*
+        An incomplete scan gets its own state — never the green dial and never
+        a ✓. If GitHub throttled us, every scanner finds nothing, and rendering
+        that as a pass is the exact false clean bill of health this whole check
+        exists to prevent.
+      */}
+      <div
+        className={`border bg-panel ${
+          incomplete ? 'border-warn/40' : result.findings.length > 0 ? 'border-danger/40' : 'border-safe/40'
+        }`}
+      >
         <div className="flex flex-col items-center gap-5 p-6 text-center sm:flex-row sm:items-center sm:gap-7 sm:text-left">
-          <ScoreDial grade={result.grade} />
+          {incomplete ? (
+            <div className="flex h-[92px] w-[92px] shrink-0 items-center justify-center rounded-full border-2 border-warn/50">
+              <span className="font-mono text-2xl text-warn">?</span>
+            </div>
+          ) : (
+            <ScoreDial grade={result.grade as Exclude<RepoScanResult['grade'], 'unknown'>} />
+          )}
           <div className="flex min-w-0 flex-1 flex-col justify-center">
-            <p className="kicker mb-1.5">Repo scan</p>
+            <p className={`kicker mb-1.5 ${incomplete ? 'text-warn' : ''}`}>
+              {incomplete ? 'Repo scan — incomplete' : 'Repo scan'}
+            </p>
             <p className="truncate font-mono text-xs text-faint">{result.ref}</p>
             <p className="mt-1.5 font-display text-lg leading-snug text-ink sm:text-xl">{result.summary}</p>
+            {incomplete && (
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                No grade, because a scan that could not read the files has nothing to grade. Nothing here
+                means the repo is clean — only that we could not check.
+              </p>
+            )}
           </div>
         </div>
       </div>
 
-      {result.findings.length > 0 ? (
+      {incomplete ? null : result.findings.length > 0 ? (
         <div className="mt-4 space-y-3">
           {result.findings.map((f, i) => (
             <div key={i} className="border border-danger/30 bg-panel p-4">
@@ -262,7 +288,7 @@ function RepoReport({ result, onReset }: { result: RepoScanResult; onReset: () =
 
       {/* A clean repo earns the same badge a clean URL scan does. Date-stamped,
           because it describes the default branch at one moment. */}
-      {result.findings.length === 0 && (
+      {!incomplete && result.findings.length === 0 && (
         <div className="mt-6 border border-safe/30 bg-panel p-5">
           <p className="kicker mb-2 text-safe">Clean scan — show it off</p>
           <p className="text-sm text-muted">
