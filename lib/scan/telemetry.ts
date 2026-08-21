@@ -49,9 +49,24 @@ export const OUTCOME_GRADES = ['A', 'B', 'C', 'D', 'F', 'unknown'] as const;
  * The ONLY keys allowed to carry a string, and the complete set of words each
  * may hold. Anything not listed here must be a boolean or a number.
  */
+/**
+ * Which backend family the app ships, if any.
+ *
+ * This is the field that makes "should we support PocketBase / Neon / Convex?"
+ * a measurable question instead of a guess. Every new backend costs a
+ * verification pass against that vendor's source, which is the scarce resource
+ * for a solo maintainer — so the decision should be driven by what apps
+ * actually use, and nothing is measuring that today.
+ *
+ * Derived from whether config was FOUND, not whether the probe succeeded: an
+ * app whose key was rejected still tells us it is a Supabase app.
+ */
+export const OUTCOME_BACKENDS = ['supabase', 'firebase', 'both', 'none'] as const;
+
 export const CLOSED_VOCABULARIES: Record<string, readonly string[]> = {
   mode: OUTCOME_MODES,
   grade: OUTCOME_GRADES,
+  backend: OUTCOME_BACKENDS,
 };
 
 export type OutcomeValue = string | number | boolean;
@@ -136,6 +151,12 @@ export function buildScanOutcome(mode: OutcomeMode, report: Report, inputs?: Rep
     high: severity.high,
     medium: severity.medium,
     low: severity.low,
+
+    // Which backend the app ships, and whether it runs somewhere other than
+    // *.supabase.co — the two numbers that decide which backends are worth
+    // supporting next, and whether custom-domain support is paying for itself.
+    backend: supabase && firebase ? 'both' : supabase ? 'supabase' : firebase ? 'firebase' : 'none',
+    selfHostedBackend: Boolean(supabase?.host) && !/\.supabase\.(?:co|in)$/i.test(supabase?.host ?? ''),
 
     // The research claim. Counts only — never which tables, never how many rows.
     dbProbed: supabaseProbed || firebaseProbed,

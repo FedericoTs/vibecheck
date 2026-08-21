@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   anonymityViolations,
+  CLOSED_VOCABULARIES,
   buildRepoOutcome,
   buildScanOutcome,
   nextCountState,
@@ -91,8 +92,12 @@ describe('anonymity guarantee', () => {
   it('emits no free-form strings — only booleans, numbers, and closed vocabularies', () => {
     const outcome = buildScanOutcome('url', report(), loadedInputs());
     expect(anonymityViolations(outcome)).toEqual([]);
-    // The only strings that survive are the two enum fields.
-    expect(strings(outcome).sort()).toEqual(['F', 'url']);
+    // Every surviving string must come from a closed vocabulary — asserted as a
+    // property rather than a fixed list, so adding an enum field cannot quietly
+    // become the way a free-form value slips through.
+    const vocab = new Set(Object.values(CLOSED_VOCABULARIES).flat());
+    for (const s of strings(outcome)) expect(vocab.has(s)).toBe(true);
+    expect(strings(outcome).sort()).toEqual(['F', 'supabase', 'url']);
   });
 
   it('leaks none of the identifying values the scan was holding', () => {
@@ -236,5 +241,47 @@ describe('buildRepoOutcome', () => {
     const outcome = buildRepoOutcome(repo({ grade: 'unknown' as RepoScanResult['grade'] }));
     expect(outcome.grade).toBe('unknown');
     expect(anonymityViolations(outcome)).toEqual([]);
+  });
+});
+
+describe('backend family — the instrument that makes the next decision measurable', () => {
+  const inputs = (o: Record<string, unknown>) => o as unknown as ReportInputs;
+
+  it('records which backend the app ships', () => {
+    expect(buildScanOutcome('url', report(), inputs({ supabase: { ok: true, host: 'x.supabase.co' } })).backend).toBe(
+      'supabase',
+    );
+    expect(buildScanOutcome('url', report(), inputs({ firebase: { ok: true } })).backend).toBe('firebase');
+    expect(
+      buildScanOutcome('url', report(), inputs({ supabase: { ok: true, host: 'x.supabase.co' }, firebase: { ok: true } }))
+        .backend,
+    ).toBe('both');
+    expect(buildScanOutcome('url', report(), {}).backend).toBe('none');
+  });
+
+  /**
+   * Config FOUND, not probe SUCCEEDED. An app whose key was rejected is still a
+   * Supabase app, and counting it as "none" would understate the population.
+   */
+  it('counts a backend we found but could not check', () => {
+    const o = buildScanOutcome('url', report(), inputs({ supabase: { ok: false, host: 'x.supabase.co' } }));
+    expect(o.backend).toBe('supabase');
+    expect(o.dbProbed).toBe(false);
+  });
+
+  it('separates self-hosted and custom-domain backends from *.supabase.co', () => {
+    const hosted = buildScanOutcome('url', report(), inputs({ supabase: { ok: true, host: 'abc.supabase.co' } }));
+    expect(hosted.selfHostedBackend).toBe(false);
+
+    const custom = buildScanOutcome('url', report(), inputs({ supabase: { ok: true, host: 'db.mycompany.com' } }));
+    expect(custom.selfHostedBackend).toBe(true);
+
+    expect(buildScanOutcome('url', report(), {}).selfHostedBackend).toBe(false);
+  });
+
+  it('still leaks nothing — the host itself never travels', () => {
+    const o = buildScanOutcome('url', report(), inputs({ supabase: { ok: true, host: 'db.mycompany.com' } }));
+    expect(anonymityViolations(o)).toEqual([]);
+    expect(JSON.stringify(o)).not.toContain('mycompany');
   });
 });
