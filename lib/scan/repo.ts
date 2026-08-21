@@ -200,13 +200,15 @@ export function analyzeRepoFiles(files: Array<{ path: string; content: string }>
       // connection string pointing somewhere unroutable, and a file whose whole
       // job is to hold sample credentials. Both are reported, neither is graded.
       const inCatalog = looksLikePatternCatalog(content);
-      const ungraded = s.local === true || inCatalog;
+      const ungraded = s.local === true || inCatalog || s.commented === true;
       findings.push({
         kind: 'secret',
         path,
         label: s.local
           ? `Local dev credentials (${path})`
-          : inCatalog
+          : s.commented
+            ? `${s.label} in a comment (${path})`
+            : inCatalog
             ? `Sample value in a pattern file (${path})`
             : committedEnv
               ? `${s.label} committed in ${path.split('/').pop()}`
@@ -214,7 +216,9 @@ export function analyzeRepoFiles(files: Array<{ path: string; content: string }>
         severity: ungraded ? 'medium' : 'critical',
         detail: s.local
           ? `${s.redacted} — points at a local or private host, so it is not reachable from the internet. Reported, not graded.`
-          : inCatalog
+          : s.commented
+            ? `${s.redacted} — found on a commented-out line. Reported, not graded, but it is still in your git history: rotate it if it was ever real.`
+            : inCatalog
             ? `${s.redacted} — this file looks like a pattern or rule catalogue, where sample keys are the point. Reported, not graded.`
             : s.redacted,
         ...(ungraded ? { graded: false } : {}),

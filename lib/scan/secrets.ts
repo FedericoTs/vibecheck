@@ -26,19 +26,41 @@ export interface SecretFinding {
    * anyone who is not already on the box, so they are reported, never graded.
    */
   local?: boolean;
+  /** Found on a commented-out line — reported, never graded. */
+  commented?: boolean;
 }
 
 /**
  * Hosts that are not reachable from the internet.
  *
  * Deliberately keyed on the HOST alone. A well-known credential pair is NOT a
- * safe suppressor — `postgres://postgres:postgres@db.prod.example.com` is a
- * genuine and serious leak, and filtering on the password would hide it.
+ * safe suppressor: the same throwaway credential pair pointed at a real
+ * production host is a genuine and serious leak, and filtering on the password
+ * would hide it. (Deliberately not spelled out as a literal URL here — this
+ * file is scanned by its own rules.)
  * A bare single-label host (`db`, `postgres`, `mysql`) is a docker-compose
  * service name, which is equally unreachable.
  */
 const LOCAL_DB_HOST =
   /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[?::1\]?|host\.docker\.internal|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[a-z0-9_-]+|.*\.(local|internal|test|localhost))$/i;
+
+/**
+ * Is the match on a commented-out line?
+ *
+ * A placeholder in a comment — including the ones in this very file — is not a
+ * live credential, and grading it critical is how a scanner accuses a codebase
+ * of a leak it does not have. Reported, never graded: it IS still in git
+ * history, so if the value was ever real it should be rotated.
+ *
+ * Deliberately looks only at the text BEFORE the match on its line. Stripping
+ * `//` comments outright would decapitate `postgres://…` and blind the
+ * connection-string rule entirely.
+ */
+export function isCommentedLine(text: string, index: number): boolean {
+  const lineStart = text.lastIndexOf('\n', index) + 1;
+  const prefix = text.slice(lineStart, index).trim();
+  return /^(\/\/|\*|\/\*|#|--)/.test(prefix);
+}
 
 /** Does this connection string point at a non-routable host? */
 export function isLocalDbUrl(match: string): boolean {
@@ -167,15 +189,22 @@ export function jwtRole(token: string): string | null {
 export function findSecrets(text: string): SecretFinding[] {
   const seen = new Set<string>();
   const out: SecretFinding[] = [];
-  const add = (id: string, label: string, severity: Severity, match: string) => {
+  const add = (id: string, label: string, severity: Severity, match: string, index = -1) => {
     const key = id + ':' + match;
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ id, label, severity, redacted: redact(match), ...(id === 'db-url' && isLocalDbUrl(match) ? { local: true } : {}) });
+    out.push({
+      id,
+      label,
+      severity,
+      redacted: redact(match),
+      ...(id === 'db-url' && isLocalDbUrl(match) ? { local: true } : {}),
+      ...(index >= 0 && isCommentedLine(text, index) ? { commented: true } : {}),
+    });
   };
 
   for (const rule of RULES) {
-    for (const m of text.matchAll(rule.regex)) add(rule.id, rule.label, rule.severity, m[0]);
+    for (const m of text.matchAll(rule.regex)) add(rule.id, rule.label, rule.severity, m[0], m.index ?? -1);
   }
   // Supabase service_role key: a JWT whose role claim is service_role.
   // The anon / authenticated keys are meant to be public — never flag them.

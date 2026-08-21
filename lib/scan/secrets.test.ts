@@ -126,3 +126,30 @@ describe('sourcesFromMap — reading the source a map republishes', () => {
     expect(sourcesFromMap(JSON.stringify({ sourcesContent: [null, 42] }))).toBe('');
   });
 });
+
+describe('comment-awareness — a placeholder in a comment is not a leak', () => {
+  it('marks a connection string on a commented line', () => {
+    // This file's own doc comments contain example connection strings; without
+    // this, the scanner grades its own source as a critical leak.
+    const jsdoc = ' * e.g. postgres://user:pw@db.example.com:5432/app is a real leak';
+    const f = findSecrets(jsdoc).find((x) => x.id === 'db-url');
+    expect(f?.commented).toBe(true);
+    for (const line of ['// postgres://user:pw@db.example.com/app', '# postgres://user:pw@db.example.com/app', '-- postgres://user:pw@db.example.com/app']) {
+      expect(findSecrets(line).find((x) => x.id === 'db-url')?.commented).toBe(true);
+    }
+  });
+
+  it('does NOT mark real code, and never decapitates the scheme', () => {
+    // Stripping "//" outright would cut `postgres://` in half and blind the
+    // rule completely — so the check reads only the text BEFORE the match.
+    const code = 'const url = "postgres://admin:S3cretPazz@db.prod.example.com:5432/app";';
+    const f = findSecrets(code).find((x) => x.id === 'db-url');
+    expect(f).toBeDefined();
+    expect(f?.commented).toBeUndefined();
+  });
+
+  it('flags a routable host and spares a local one', () => {
+    expect(findSecrets('DATABASE_URL=postgres://u:p@db.prod.example.com:5432/x').find((x) => x.id === 'db-url')?.local).toBeUndefined();
+    expect(findSecrets('DATABASE_URL=postgres://postgres:postgres@localhost:54322/x').find((x) => x.id === 'db-url')?.local).toBe(true);
+  });
+});
