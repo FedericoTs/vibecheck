@@ -60,10 +60,55 @@ export function cspIsMeaningful(csp: string | undefined): boolean {
   return true;
 }
 
+/**
+ * Split a joined Set-Cookie header back into individual cookies.
+ *
+ * Node joins multiple Set-Cookie headers with ", ", and an Expires attribute
+ * contains its own comma ("Expires=Wed, 09 Jun 2027 ..."), so a naive split on
+ * "," tears cookies in half. Split only on a comma that is followed by a fresh
+ * `name=` pair.
+ */
+export function splitCookies(setCookie: string): string[] {
+  return setCookie
+    .split(/,(?=\s*[A-Za-z0-9!#$%&'*+.^_`|~-]+\s*=)/)
+    .map((c) => c.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Cookies that plausibly carry a session or auth token, judged by name.
+ *
+ * HttpOnly only matters for a cookie whose theft means something. Requiring it
+ * on every cookie flags things like Next.js's NEXT_LOCALE — a locale preference
+ * where the flag is meaningless — and that is not a security finding, it is
+ * noise that costs a real app a grade. Found by scanning a real Next.js app
+ * with i18n, which is a large share of the apps this tool exists for.
+ *
+ * Secure is different and stays universal: any cookie sent over http leaks.
+ */
+const SESSION_COOKIE =
+  /(^|[-_.])(sess|sid|auth|token|jwt|access|refresh|login|remember|identity|credential)/i;
+
+export function isSessionCookie(cookie: string): boolean {
+  const name = cookie.split('=')[0]?.trim() ?? '';
+  // __Host-/__Secure- prefixes are only used for cookies that matter.
+  if (/^__(Host|Secure)-/i.test(name)) return true;
+  return SESSION_COOKIE.test(name);
+}
+
+/**
+ * True when nothing here is worth grading down.
+ *
+ * Every cookie must be Secure. HttpOnly is required only of session-like
+ * cookies — report-over-grade wherever a legitimate explanation exists, which
+ * is this codebase's standing rule.
+ */
 export function cookiesLookSafe(setCookie: string | undefined): boolean {
   const raw = (setCookie ?? '').trim();
   if (!raw) return true;
-  return /httponly/i.test(raw) && /secure/i.test(raw);
+  const cookies = splitCookies(raw);
+  if (cookies.length === 0) return true;
+  return cookies.every((c) => /;\s*secure(\s*;|\s*$)/i.test(c) && (!isSessionCookie(c) || /httponly/i.test(c)));
 }
 
 export function gradeHeaders(rawHeaders: Record<string, string>, host = ''): HeadersScanResult {

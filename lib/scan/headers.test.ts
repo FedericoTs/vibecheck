@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gradeHeaders, lowerHeaders, cspIsMeaningful } from './headers';
+import { gradeHeaders, lowerHeaders, cspIsMeaningful, cookiesLookSafe, splitCookies } from './headers';
 
 const FULL = {
   'Content-Security-Policy': "default-src 'self'",
@@ -83,5 +83,48 @@ describe('CSP effectiveness in the graded checks', () => {
   it('no CSP at all fails the presence check without double-penalising effectiveness', () => {
     expect(get({}, 'content-security-policy').present).toBe(false);
     expect(get({}, 'csp-effective').present).toBe(true);
+  });
+});
+
+/**
+ * Found by scanning a real Next.js app with i18n. Its only cookie is
+ * NEXT_LOCALE=en; Path=/; Secure; SameSite=lax — a locale preference, where
+ * HttpOnly means nothing. Requiring the flag on every cookie cost that app a
+ * grade for a non-issue, and NEXT_LOCALE is a framework default, so it would
+ * have hit a large share of the apps this tool is built for.
+ */
+describe('cookie flags', () => {
+  it('does not grade HttpOnly on a preference cookie', () => {
+    expect(cookiesLookSafe('NEXT_LOCALE=en; Path=/; Secure; SameSite=lax')).toBe(true);
+    expect(cookiesLookSafe('theme=dark; Path=/; Secure')).toBe(true);
+  });
+
+  it('still requires HttpOnly on anything session-shaped', () => {
+    expect(cookiesLookSafe('sessionid=abc; Path=/; Secure')).toBe(false);
+    expect(cookiesLookSafe('sb-abcdef-auth-token=x; Path=/; Secure')).toBe(false);
+    expect(cookiesLookSafe('__Host-next-auth.csrf=x; Path=/; Secure')).toBe(false);
+    expect(cookiesLookSafe('sessionid=abc; Path=/; Secure; HttpOnly')).toBe(true);
+  });
+
+  it('requires Secure on EVERY cookie, session or not', () => {
+    expect(cookiesLookSafe('NEXT_LOCALE=en; Path=/')).toBe(false);
+    expect(cookiesLookSafe('sessionid=abc; Path=/; HttpOnly')).toBe(false);
+  });
+
+  it('splits a joined header without tearing an Expires date in half', () => {
+    // The comma inside "Expires=Wed, 09 Jun 2027" must not split the cookie.
+    const joined = 'a=1; Expires=Wed, 09 Jun 2027 10:18:14 GMT; Secure, sessionid=2; Secure; HttpOnly';
+    expect(splitCookies(joined)).toHaveLength(2);
+    expect(cookiesLookSafe(joined)).toBe(true);
+  });
+
+  it('judges each cookie in a multi-cookie header on its own merits', () => {
+    expect(cookiesLookSafe('NEXT_LOCALE=en; Secure, sessionid=2; Secure')).toBe(false);
+    expect(cookiesLookSafe('NEXT_LOCALE=en; Secure, sessionid=2; Secure; HttpOnly')).toBe(true);
+  });
+
+  it('says nothing when no cookies are set', () => {
+    expect(cookiesLookSafe(undefined)).toBe(true);
+    expect(cookiesLookSafe('')).toBe(true);
   });
 });
