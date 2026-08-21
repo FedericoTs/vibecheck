@@ -257,8 +257,14 @@ export function gradeRepo(findings: RepoFinding[]): RepoScanResult['grade'] {
   const graded = findings.filter((f) => f.graded !== false);
   const crit = graded.filter((f) => f.severity === 'critical').length;
   const high = graded.filter((f) => f.severity === 'high').length;
+  const medium = graded.filter((f) => f.severity === 'medium').length;
   if (crit > 0) return 'F';
   if (high >= 2) return 'F';
   if (high === 1) return 'D';
+  // There was no medium band, so a repo with real advisories rendered red ✗
+  // cards next to a grade-A dial. A grade must never contradict what is on
+  // screen beneath it.
+  if (medium >= 3) return 'C';
+  if (medium >= 1) return 'B';
   return 'A';
 }

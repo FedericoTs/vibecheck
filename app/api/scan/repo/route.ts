@@ -4,6 +4,7 @@ import { UA } from '@/lib/scan/fetch';
 import {
   parseRepoUrl,
   selectFiles,
+  isFixture,
   analyzeRepoFiles,
   gradeRepo,
   type TreeEntry,
@@ -13,12 +14,15 @@ import {
 import { lintDockerfile, isDockerfilePath, looksLikeDockerfile } from '@/lib/scan/dockerfile';
 import {
   parseNpmLock,
+  parsePnpmLock,
+  parseYarnLock,
   parsePackageJson,
   parseRequirementsTxt,
   osvBatchBody,
   parseOsvBatch,
   classifyVuln,
   type Dep,
+  type DepSeverity,
 } from '@/lib/scan/deps';
 
 export const runtime = 'nodejs';
@@ -151,7 +155,7 @@ function fail(ref: string, error: string, status = 400): Response {
   return NextResponse.json({ ok: false, ref, filesScanned: 0, findings: [], grade: 'unknown', summary: error, error } as RepoScanResult, { status });
 }
 
-const DEP_MANIFESTS = ['package-lock.json', 'package.json', 'requirements.txt'];
+const DEP_MANIFESTS = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'package.json', 'requirements.txt'];
 const MAX_MANIFEST_BYTES = 6_000_000; // lockfiles carry the whole transitive tree
 
 /** Like fetchRaw but with a big cap, since a truncated lockfile fails to parse. */
@@ -167,7 +171,7 @@ async function fetchManifest(owner: string, repo: string, branch: string, path: 
     return '';
   }
 }
-const SEV_RANK = { critical: 3, high: 2, medium: 1 } as const;
+const SEV_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, unknown: 1 };
 
 /**
  * Ask OSV.dev (free, keyless) which of the repo's exact dependency versions
@@ -177,7 +181,7 @@ const SEV_RANK = { critical: 3, high: 2, medium: 1 } as const;
 async function scanDependencies(owner: string, repo: string, branch: string, tree: TreeEntry[]): Promise<{ findings: RepoFinding[]; deps: Dep[] }> {
   const manifests = tree
     .map((e) => e.path)
-    .filter((p) => DEP_MANIFESTS.some((m) => p === m || p.endsWith('/' + m)) && !/node_modules\//.test(p))
+    .filter((p) => DEP_MANIFESTS.some((m) => p === m || p.endsWith('/' + m)) && !/node_modules\//.test(p) && !isFixture(p))
     .sort((a, b) => a.split('/').length - b.split('/').length) // root manifests first
     .slice(0, 6);
   if (manifests.length === 0) return { findings: [], deps: [] };
@@ -189,11 +193,22 @@ async function scanDependencies(owner: string, repo: string, branch: string, tre
   for (const { p, content } of loaded) {
     if (!content) continue;
     if (p.endsWith('package-lock.json')) lockDeps.push(...parseNpmLock(content));
+    else if (p.endsWith('pnpm-lock.yaml')) lockDeps.push(...parsePnpmLock(content));
+    else if (p.endsWith('yarn.lock')) lockDeps.push(...parseYarnLock(content));
     else if (p.endsWith('package.json')) pkgDeps.push(...parsePackageJson(content));
     else if (p.endsWith('requirements.txt')) reqDeps.push(...parseRequirementsTxt(content));
   }
-  // Prefer the lockfile's exact resolved versions; if it was missing, unparseable
-  // or truncated (0 deps), fall back to package.json's declared ranges.
+  // Prefer the lockfile's exact resolved versions; if it was missing,
+  // unparseable or truncated (0 deps), fall back to package.json's declared
+  // ranges.
+  //
+  // That fallback is a GUESS, and it must be labelled as one. cleanVersion
+  // takes the floor of a range, so `^8.4.23` is queried as 8.4.23 — which may
+  // be a version the user does not have installed at all. Reporting "pkg@8.4.23
+  // has a known vulnerability" against a lockfile that actually resolves 8.4.49
+  // is a false statement about their app, so range-floor findings are reported
+  // and never graded.
+  const usingRangeFloor = lockDeps.length === 0 && pkgDeps.length > 0;
   const deps: Dep[] = [...(lockDeps.length ? lockDeps : pkgDeps), ...reqDeps];
   const uniq = new Map<string, Dep>();
   for (const d of deps) uniq.set(`${d.ecosystem}:${d.name}@${d.version}`, d);
@@ -231,16 +246,36 @@ async function scanDependencies(owner: string, repo: string, branch: string, tre
   for (const { dep, ids: vids } of vulnerable) {
     const classified = vids.map((i) => details.get(i)).filter((c): c is ReturnType<typeof classifyVuln> => !!c);
     const worst = [...classified].sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity])[0];
-    const malware = classified.some((c) => c.malware);
+    // A MAL- id IS a malicious-package advisory by definition, and the id is
+    // already in hand from querybatch — so malware is established WITHOUT a
+    // detail fetch. Previously, if the detail budget ran out before reaching a
+    // Shai-Hulud advisory, the MALICIOUS label was silently dropped.
+    const malwareFromId = vids.some((i) => /^MAL-/i.test(i));
+    const malware = malwareFromId || classified.some((c) => c.malware);
     const summary = worst?.summary && worst.summary !== vids[0] ? `: ${worst.summary.slice(0, 100)}` : '';
+    // Severity is only claimed where it was actually established. With no
+    // detail fetched, saying 'medium' invents a rating; 'unknown' is the truth.
+    const severity: DepSeverity = malware ? 'critical' : (worst?.severity ?? 'unknown');
+    const unresolved = vids.length - classified.length;
     findings.push({
       kind: 'dependency',
       path: `${dep.name}@${dep.version}`,
       label: malware
         ? `MALICIOUS package: ${dep.name}@${dep.version}`
-        : `${dep.name}@${dep.version} has a known vulnerability`,
-      severity: worst?.severity ?? 'medium',
-      detail: `${vids.length} advisor${vids.length === 1 ? 'y' : 'ies'} (${vids.slice(0, 2).join(', ')})${summary}`,
+        : usingRangeFloor && dep.ecosystem === 'npm'
+          ? `${dep.name}: the lowest version your package.json allows (${dep.version}) has a known vulnerability`
+          : `${dep.name}@${dep.version} has a known vulnerability`,
+      severity: severity === 'unknown' || severity === 'low' ? 'medium' : severity,
+      detail:
+        `${vids.length} advisor${vids.length === 1 ? 'y' : 'ies'} (${vids.slice(0, 2).join(', ')})${summary}` +
+        (severity === 'unknown'
+          ? ` — severity not established (details fetched for ${classified.length} of ${vids.length})`
+          : unresolved > 0
+            ? ` — ${unresolved} advisor${unresolved === 1 ? 'y' : 'ies'} not detailed`
+            : ''),
+      // Neither an unestablished severity nor a guessed version may move the
+      // grade.
+      ...(severity === 'unknown' || (usingRangeFloor && dep.ecosystem === 'npm') ? { graded: false } : {}),
     });
   }
   // Worst first, and capped so a repo with dozens of stale deps stays readable.
@@ -251,7 +286,7 @@ async function scanDependencies(owner: string, repo: string, branch: string, tre
 async function scanDockerfiles(owner: string, repo: string, branch: string, tree: TreeEntry[]): Promise<RepoFinding[]> {
   const paths = tree
     .map((e) => e.path)
-    .filter((p) => isDockerfilePath(p) && !/node_modules\//.test(p))
+    .filter((p) => isDockerfilePath(p) && !/node_modules\//.test(p) && !isFixture(p))
     .slice(0, 4);
   if (paths.length === 0) return [];
   const loaded = await mapLimit(paths, 4, async (p) => ({ p, content: await fetchRaw(owner, repo, branch, p) }));
@@ -344,7 +379,10 @@ export async function POST(request: Request): Promise<Response> {
     summary: tooManyFailed
       ? `GitHub would not serve ${unreadable} of ${paths.length} files, so this scan is incomplete — no grade. Try again in a few minutes.`
       : findings.length === 0
-        ? `${files.length} source file(s) + dependencies scanned — nothing found ✅`
+        ? // Never claim a subsystem was "scanned" when it was not. A Go or Rust
+          // repo has no manifest we parse, and saying "dependencies scanned"
+          // there asserts work that never happened.
+          `${files.length} source file(s) scanned${depResult.deps.length > 0 ? ` · ${depResult.deps.length} dependencies checked` : ' · no supported dependency manifest found, so dependencies were NOT checked'} — nothing found ✅`
         : `${findings.length} issue(s) found${depFindings.length ? ` (${depFindings.length} in dependencies)` : ''} ⚠️`,
   } as RepoScanResult);
 }

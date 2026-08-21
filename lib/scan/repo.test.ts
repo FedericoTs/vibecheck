@@ -232,3 +232,28 @@ describe('an unreadable scan must never grade as a pass', () => {
     expect(decide(60, 2, 0)).toBe('A');
   });
 });
+
+describe('gradeRepo never contradicts what is on screen', () => {
+  const f = (severity: 'critical' | 'high' | 'medium') => ({
+    kind: 'dependency' as const, path: 'p', label: 'l', severity, detail: '',
+  });
+
+  it('an A can never sit above a list of findings', () => {
+    // There was no medium band, so real advisories rendered red ✗ cards next
+    // to a grade-A dial.
+    for (const set of [[f('medium')], [f('medium'), f('medium')], [f('medium'), f('medium'), f('medium')], [f('high')], [f('critical')]]) {
+      expect(gradeRepo(set)).not.toBe('A');
+    }
+  });
+
+  it('bands medium findings', () => {
+    expect(gradeRepo([f('medium')])).toBe('B');
+    expect(gradeRepo([f('medium'), f('medium'), f('medium')])).toBe('C');
+    expect(gradeRepo([f('high')])).toBe('D');
+    expect(gradeRepo([f('critical')])).toBe('F');
+  });
+
+  it('but ungraded findings still leave an A', () => {
+    expect(gradeRepo([{ ...f('medium'), graded: false }])).toBe('A');
+  });
+});

@@ -61,6 +61,54 @@ export function cleanVersion(range: string): string | null {
   return m ? m[1] : null;
 }
 
+/**
+ * pnpm-lock.yaml — exact resolved versions.
+ *
+ * Without this, a pnpm repo (most modern ones) fell through to package.json's
+ * declared RANGES, and every version reported was the range floor — possibly a
+ * version the user does not have installed at all.
+ *
+ * Handles the v9 `packages:`/`snapshots:` keys and the older `/name/version`
+ * form, and strips the peer-dependency suffix: `react-dom@18.2.0(react@18.2.0)`
+ * must be queried as react-dom@18.2.0, or OSV receives an unresolvable version.
+ */
+export function parsePnpmLock(content: string): Dep[] {
+  const out = new Map<string, Dep>();
+  for (const line of content.split('\n')) {
+    // Keys sit indented under packages:/snapshots: and end with a colon.
+    // The key may be quoted, and scoped names usually are.
+    const m = line.match(/^\s{2,}['"]?\/?((?:@[\w.-]+\/)?[\w.-]+)[@/](\d[^:()'"\s]*)(?:\([^)]*\))*['"]?\s*:\s*$/);
+    if (!m) continue;
+    const [, name, version] = m;
+    out.set(`${name}@${version}`, { name, version, ecosystem: 'npm' });
+  }
+  return [...out.values()];
+}
+
+/**
+ * yarn.lock — the v1 format (`version "1.2.3"`) and Berry's YAML
+ * (`version: 1.2.3`). The header line carries the requested RANGE, so the
+ * resolved version is read from the body.
+ */
+export function parseYarnLock(content: string): Dep[] {
+  const out = new Map<string, Dep>();
+  let header = '';
+  for (const line of content.split('\n')) {
+    if (/^\S/.test(line) && line.trim().endsWith(':')) {
+      header = line.trim().replace(/:$/, '');
+      continue;
+    }
+    const v = line.match(/^\s+version:?\s+"?([\d][^"\s]*)"?/);
+    if (!v || !header) continue;
+    // `"react-dom@npm:^18.2.0, react-dom@^18"` -> react-dom
+    const first = header.split(',')[0].trim().replace(/^"|"$/g, '');
+    const at = first.lastIndexOf('@');
+    const name = at > 0 ? first.slice(0, at) : first;
+    if (name) out.set(`${name}@${v[1]}`, { name, version: v[1], ecosystem: 'npm' });
+  }
+  return [...out.values()];
+}
+
 /** Declared deps from package.json — a fallback when no lockfile is present (less exact). */
 export function parsePackageJson(content: string): Dep[] {
   let json: unknown;
@@ -121,18 +169,75 @@ export interface OsvVuln {
   database_specific?: { severity?: string; malicious?: boolean };
 }
 
-export type DepSeverity = 'critical' | 'high' | 'medium';
+/**
+ * 'unknown' is a real outcome, not a synonym for medium. Defaulting an
+ * unclassified advisory to 'medium' invents a rating the tool never
+ * established, and then grades the user on it.
+ */
+export type DepSeverity = 'critical' | 'high' | 'medium' | 'low' | 'unknown';
 
-/** Highest CVSS base score across the severity array, if any. */
+/**
+ * CVSS base score from an OSV severity array.
+ *
+ * OSV stores severity as a VECTOR STRING — "CVSS:3.1/AV:N/AC:L/..." — not a
+ * number, so the old numeric regex matched nothing and this function silently
+ * returned null for every advisory. Everything then fell back to
+ * database_specific.severity, which only GitHub-sourced advisories carry, so
+ * PyPI and Go advisories had no severity at all and were defaulted to medium.
+ *
+ * Computing the real base score needs the whole CVSS formula; what we need is a
+ * BAND, so the metrics that drive the band are read directly and mapped
+ * conservatively. Any vector we cannot read returns null, and null means
+ * unknown — never medium.
+ */
 export function cvssScore(severity: OsvVuln['severity']): number | null {
   if (!Array.isArray(severity)) return null;
   let best: number | null = null;
   for (const s of severity) {
-    const m = String(s?.score ?? '').match(/(\d+(?:\.\d+)?)\/?$|^(\d+(?:\.\d+)?)$/);
-    const n = m ? parseFloat(m[1] ?? m[2]) : NaN;
-    if (Number.isFinite(n)) best = best == null ? n : Math.max(best, n);
+    const raw = String(s?.score ?? '');
+    // A bare number, if a database ever supplies one.
+    const plain = raw.match(/^(\d+(?:\.\d+)?)$/);
+    if (plain) {
+      const n = parseFloat(plain[1]);
+      if (Number.isFinite(n)) best = best == null ? n : Math.max(best, n);
+      continue;
+    }
+    const n = scoreFromVector(raw);
+    if (n != null) best = best == null ? n : Math.max(best, n);
   }
   return best;
+}
+
+/**
+ * Approximate a CVSS v3/v4 base score from its vector.
+ *
+ * Deliberately an approximation with a documented direction: it is used only to
+ * pick a band, and it rounds toward the SAFE side (a genuinely critical issue
+ * must not be shown as medium). Vectors it does not understand return null.
+ */
+export function scoreFromVector(vector: string): number | null {
+  if (!/^CVSS:[34]/i.test(vector)) return null;
+  const get = (k: string): string | null => vector.match(new RegExp(`\\b${k}:([A-Z])`, 'i'))?.[1]?.toUpperCase() ?? null;
+  // v4 uses VC/VI/VA for the impact metrics; v3 uses C/I/A.
+  const c = get('VC') ?? get('C');
+  const i = get('VI') ?? get('I');
+  const a = get('VA') ?? get('A');
+  const av = get('AV');
+  const pr = get('PR');
+  const ui = get('UI');
+  if (!c || !i || !a) return null;
+  const impact = (x: string): number => (x === 'H' ? 3 : x === 'L' ? 1 : 0);
+  const worst = Math.max(impact(c), impact(i), impact(a));
+  if (worst === 0) return 0;
+  const network = av === 'N';
+  const noPriv = pr === 'N';
+  const noUi = ui === 'N';
+  // Network-reachable, unauthenticated, no interaction, high impact => critical.
+  if (worst === 3 && network && noPriv && noUi) return 9.8;
+  if (worst === 3 && network && noPriv) return 8.8;
+  if (worst === 3) return 7.5;
+  if (worst === 1 && network && noPriv) return 6.5;
+  return 4.3;
 }
 
 /**
@@ -164,8 +269,12 @@ export function classifyVuln(v: OsvVuln): { id: string; summary: string; severit
   const malware = isMalware(v);
   const dbSev = String(v.database_specific?.severity ?? '').toUpperCase();
   const cvss = cvssScore(v.severity);
-  let severity: DepSeverity = 'medium';
+  // No rating from either source means we did not establish one. Saying
+  // 'medium' there is inventing a number and then grading the user on it.
+  let severity: DepSeverity = 'unknown';
   if (malware || dbSev === 'CRITICAL' || (cvss != null && cvss >= 9)) severity = 'critical';
   else if (dbSev === 'HIGH' || (cvss != null && cvss >= 7)) severity = 'high';
+  else if (dbSev === 'MODERATE' || dbSev === 'MEDIUM' || (cvss != null && cvss >= 4)) severity = 'medium';
+  else if (dbSev === 'LOW' || (cvss != null && cvss > 0)) severity = 'low';
   return { id: v.id, summary: v.summary || v.id, severity, malware };
 }
