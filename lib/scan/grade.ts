@@ -32,6 +32,12 @@ export function scoreToGrade(score: number): Grade {
 const ORDER: Grade[] = ['A', 'B', 'C', 'D', 'F'];
 
 /** Worst (lowest) grade across categories — an overall report card is only as good as its weakest scan. */
+/**
+ * ⚠️ An empty list means NOTHING WAS MEASURED, not 'average'. It returns 'C'.
+ * Accepted pre-launch because every path that reaches here also renders the
+ * partial-scan banner and the provisional grade label. Trigger to fix: any
+ * report observed in the wild with total === 0.
+ */
 export function worstGrade(grades: Grade[]): Grade {
   if (grades.length === 0) return 'C';
   return grades.reduce((worst, g) => (ORDER.indexOf(g) > ORDER.indexOf(worst) ? g : worst), 'A' as Grade);

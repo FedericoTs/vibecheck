@@ -533,6 +533,10 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [inputs, setInputs] = useState<ReportInputs | null>(null);
   const [lhLoading, setLhLoading] = useState(false);
+  // Lighthouse failing used to just remove the spinner, leaving nothing behind —
+  // and a section that silently disappears reads as "fine", not as "unknown".
+  // PSI throttles with 500-class errors, so this fires more often than it looks.
+  const [lhFailed, setLhFailed] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [fixCopied, setFixCopied] = useState(false);
@@ -572,8 +576,8 @@ export default function Home() {
   useEffect(() => {
     const { counted, emit } = nextCountState(Boolean(report), countedReport.current);
     countedReport.current = counted;
-    if (emit && report) track('scan_completed', buildScanOutcome(lastMode.current, report, inputs));
-  }, [report, inputs]);
+    if (emit && report) track('scan_completed', buildScanOutcome(lastMode.current, report, inputs, skipped.length));
+  }, [report, inputs, skipped]);
   useEffect(() => {
     if (!repoResult || countedRepo.current === repoResult) return;
     countedRepo.current = repoResult;
@@ -599,11 +603,18 @@ export default function Home() {
     // every failure is recorded and surfaced rather than silently dropped.
     const failed: string[] = [];
     let limited = false;
+    // A scan against a slow or hostile origin can otherwise hang until Vercel's
+    // own 300s ceiling, and the user just watches a spinner. 45s because the
+    // source-map scan is sequential and legitimately slow on exactly the sites
+    // with the most to find — cutting to 30s would convert real findings into
+    // "could not run". An abort lands in the .catch below, which pushes to
+    // `failed`, so a timeout renders as a SKIP and never as a pass.
     const postScan = <T,>(endpoint: string, label: string): Promise<T | null> =>
       fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ url: appUrl }),
+        signal: AbortSignal.timeout(45_000),
       })
         .then(async (r) => {
           if (r.status === 429) {
@@ -685,12 +696,16 @@ export default function Home() {
       // ready. GET so Vercel's edge caches each URL's result (protects the PSI quota).
       if (appUrl.trim()) {
         setLhLoading(true);
-        fetch(`/api/scan/lighthouse?url=${encodeURIComponent(appUrl)}`)
+        setLhFailed(false);
+        fetch(`/api/scan/lighthouse?url=${encodeURIComponent(appUrl)}`, {
+          signal: AbortSignal.timeout(45_000),
+        })
           .then((r) => r.json())
           .then((j) => (j?.error ? null : (j as LighthouseResult)))
           .catch(() => null)
           .then((lh) => {
             if (lh) setInputs((prev) => ({ ...(prev ?? base), lighthouse: lh }));
+            else setLhFailed(true);
           })
           .finally(() => setLhLoading(false));
       }
@@ -1315,7 +1330,7 @@ export default function Home() {
           )}
 
           {/* fundamentals + performance — secondary, own grades */}
-          {(report.categories.some((c) => c.group === 'basics' || c.group === 'performance') || lhLoading) && (
+          {(report.categories.some((c) => c.group === 'basics' || c.group === 'performance') || lhLoading || lhFailed) && (
             <div className="mt-8">
               <p className="kicker mb-3">
                 Visibility, fundamentals &amp; performance <span className="text-faint">· separate from the security grade</span>
@@ -1345,6 +1360,16 @@ export default function Home() {
                     <p className="font-mono text-xs text-muted">
                       Running Lighthouse — performance, SEO, accessibility{' '}
                       <span className="text-faint">(can take 10–30s)</span>
+                    </p>
+                  </div>
+                )}
+                {lhFailed && !lhLoading && (
+                  <div className="border border-warn/40 bg-panel px-4 py-3">
+                    <p className="font-mono text-xs text-warn">Lighthouse did not return</p>
+                    <p className="mt-1 text-xs leading-relaxed text-faint">
+                      Performance, SEO and accessibility are <span className="text-ink">unknown for this scan</span> —
+                      not fine. Google&rsquo;s API throttles and occasionally fails a run; try again in a minute. Your
+                      security grade is unaffected: it never depended on these.
                     </p>
                   </div>
                 )}

@@ -46,10 +46,6 @@ export type OutcomeMode = (typeof OUTCOME_MODES)[number];
 export const OUTCOME_GRADES = ['A', 'B', 'C', 'D', 'F', 'unknown'] as const;
 
 /**
- * The ONLY keys allowed to carry a string, and the complete set of words each
- * may hold. Anything not listed here must be a boolean or a number.
- */
-/**
  * Which backend family the app ships, if any.
  *
  * This is the field that makes "should we support PocketBase / Neon / Convex?"
@@ -63,6 +59,10 @@ export const OUTCOME_GRADES = ['A', 'B', 'C', 'D', 'F', 'unknown'] as const;
  */
 export const OUTCOME_BACKENDS = ['supabase', 'firebase', 'both', 'none'] as const;
 
+/**
+ * The ONLY keys allowed to carry a string, and the complete set of words each
+ * may hold. Anything not listed here must be a boolean or a number.
+ */
 export const CLOSED_VOCABULARIES: Record<string, readonly string[]> = {
   mode: OUTCOME_MODES,
   grade: OUTCOME_GRADES,
@@ -131,7 +131,12 @@ export function nextCountState(hasReport: boolean, counted: boolean): { counted:
  * whose database we never reached is not evidence of a safe database, and must
  * not be averaged in with the ones we did reach.
  */
-export function buildScanOutcome(mode: OutcomeMode, report: Report, inputs?: ReportInputs | null): Outcome {
+export function buildScanOutcome(
+  mode: OutcomeMode,
+  report: Report,
+  inputs?: ReportInputs | null,
+  skipped = 0,
+): Outcome {
   const severity = severityCounts(report);
   const supabase = inputs?.supabase ?? null;
   const firebase = inputs?.firebase ?? null;
@@ -151,6 +156,14 @@ export function buildScanOutcome(mode: OutcomeMode, report: Report, inputs?: Rep
     high: severity.high,
     medium: severity.medium,
     low: severity.low,
+
+    // COVERAGE. Every failure mode converges here: PSI throttling, GitHub raw
+    // throttling, 429s, function timeouts, a WAF blocking the probe burst — all
+    // of them land as a skipped check. Repo mode has had `partialScan` since it
+    // shipped; URL mode had nothing, so there was no way to see whether launch
+    // traffic was quietly degrading reports into provisional ones.
+    skipped,
+    partialScan: skipped > 0,
 
     // Which backend the app ships, and whether it runs somewhere other than
     // *.supabase.co — the two numbers that decide which backends are worth

@@ -11,6 +11,8 @@ import { discoverFirebase, extractCollections } from '@/lib/scan/firebase';
 import { scanLibraries } from '@/lib/scan/libs';
 
 export const runtime = 'nodejs';
+// Worst case is the sequential source-map loop; without this it can hold an instance for minutes. Matches the two routes that already declare a ceiling.
+export const maxDuration = 60;
 
 export async function POST(request: Request): Promise<Response> {
   const limited = rateLimitResponse(request.headers);

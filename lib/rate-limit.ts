@@ -4,12 +4,26 @@
  * Without this, anyone can point vibecheck's endpoints at thousands of sites:
  * every request would originate from our servers and our bill, which makes the
  * tool an anonymising scan proxy and an uncapped cost. A scan is also genuinely
- * expensive (one scan fans out to ~40 outbound fetches), so the cap is low.
+ * expensive — measured, not estimated: ~50 outbound fetches at floor, ~86
+ * typical, ~130 worst case (20 script bundles, a second entry-page pass, one
+ * source-map fetch per chunk, 10 path probes, 13 fixed + up to 12 bundle-derived
+ * route probes). So the cap is low.
  *
- * Deliberately in-memory: no database, no dependency. On serverless this is
- * per-instance rather than global, so it is a speed bump for casual abuse and a
- * cost ceiling per instance — not a security control. The SSRF guard is what
- * actually prevents harm; this prevents volume.
+ * Deliberately in-memory: no database, no dependency. It is per-FUNCTION and
+ * per-instance — each scan route is its own module with its own bucket map — so
+ * the effective global cap is unknowable, and no tuning changes that. It is a
+ * cost ceiling, not a security control. The SSRF guard is what actually
+ * prevents harm; this prevents volume.
+ *
+ * Trigger to replace: sustained abuse visible in function logs without 429s.
+ * Then add one Vercel WAF rate-limit rule on /api/scan/* — counters are
+ * per-region, which is much-more-global than this, though still not global.
+ *
+ * ⚠️ Do NOT "fix" amplification with a target-keyed bucket here. One scan fires
+ * 12 concurrent requests for the SAME host, so whichever lands first would eat
+ * that host's budget and the other 11 would 429 — turning every honest scan
+ * into a partial one. Real per-target throttling needs shared state and one
+ * budget per (client, host) SCAN, not per request.
  */
 
 export interface RateLimitResult {
@@ -19,10 +33,13 @@ export interface RateLimitResult {
 }
 
 const WINDOW_MS = 60_000;
-// One full report fans out to ~6 endpoint calls, so this is ~10 reports per
-// minute per IP: far more than any human scanning apps back to back, and still
-// a hard ceiling on scripted abuse. Set too low (it was 12) real users hit the
-// wall after two scans, which for a free viral tool is worse than the abuse.
+// One full report is 12 inbound calls (11 POSTs plus the Lighthouse GET), so
+// this is 5 reports per minute per IP — not the 10 an earlier comment claimed
+// from a stale count of 6. Still far more than any human scanning apps back to
+// back, and a hard ceiling on scripted abuse. Set too low (it was 12) real users
+// hit the wall after two scans, which for a free viral tool is worse than the
+// abuse. If it is ever raised, stop at 120 (10 reports/min): higher and it stops
+// being a cost ceiling, which is the only job it has.
 const MAX_PER_WINDOW = 60;
 
 type Bucket = { count: number; resetAt: number };

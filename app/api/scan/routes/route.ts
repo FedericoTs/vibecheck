@@ -7,6 +7,8 @@ import { extractRoutes } from '@/lib/scan/bundle-routes';
 import { scriptUrls, fetchScript } from '@/lib/scan/bundle';
 
 export const runtime = 'nodejs';
+// Fixed probes + bundle-derived probes + script fetches all against a possibly-slow origin. Matches the two routes that already declare a ceiling.
+export const maxDuration = 60;
 
 const TIMEOUT_MS = 7000;
 const MAX_BYTES = 200_000;

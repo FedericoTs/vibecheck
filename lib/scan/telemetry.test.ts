@@ -285,3 +285,23 @@ describe('backend family — the instrument that makes the next decision measura
     expect(JSON.stringify(o)).not.toContain('mycompany');
   });
 });
+
+describe('coverage telemetry — the number every failure mode converges on', () => {
+  it('records how many checks could not run', () => {
+    const clean = buildScanOutcome('url', report(), {}, 0);
+    expect(clean.skipped).toBe(0);
+    expect(clean.partialScan).toBe(false);
+
+    const degraded = buildScanOutcome('url', report(), {}, 3);
+    expect(degraded.skipped).toBe(3);
+    expect(degraded.partialScan).toBe(true);
+  });
+
+  it('defaults to complete when a caller does not pass it', () => {
+    expect(buildScanOutcome('url', report(), {}).partialScan).toBe(false);
+  });
+
+  it('stays anonymous', () => {
+    expect(anonymityViolations(buildScanOutcome('url', report(), {}, 3))).toEqual([]);
+  });
+});
