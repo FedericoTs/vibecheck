@@ -76,6 +76,12 @@ export interface SecretsScanResult {
   /** publicly served .js.map files — these republish your original source code. */
   sourceMaps?: {
     exposed: string[];
+    /**
+     * The map URLs themselves, so a finding can carry the request that proves
+     * it. Excludes inline data: URIs, which cannot be fetched and must never
+     * be rendered as a command.
+     */
+    mapUrls?: string[];
     checked: boolean;
     /** Chunks that referenced a map, whether or not it actually resolved. */
     annotated?: number;
@@ -216,19 +222,53 @@ export function findSecrets(text: string): SecretFinding[] {
   return out;
 }
 
+/**
+ * Whether a finding may move the grade at all.
+ *
+ * A connection string pointing at localhost, a private range, or a
+ * docker-compose service name is not readable by anyone who is not already on
+ * the box. It is the framework default, it is in a million tutorials, and
+ * grading it is a false accusation — repo mode has said exactly that since it
+ * shipped ("points at a local or private host, so it is not reachable from the
+ * internet. Reported, not graded."). The URL and mobile paths never got the
+ * same treatment, so a localhost DSN recovered from a source map scored an F.
+ */
+export function isGradedSecret(f: SecretFinding): boolean {
+  return f.local !== true;
+}
+
+/**
+ * Whether a finding is a hard failure rather than something to double-check.
+ *
+ * `commented` deliberately does NOT get repo mode's free pass. There, the
+ * argument is about git history. Here the bytes are being SERVED: a real key on
+ * a commented-out line in a published source map is readable by anyone who
+ * fetches it, and commenting it out in the editor did not un-publish it. But we
+ * cannot tell a real key from a placeholder someone commented out, so it stops
+ * being an F and becomes a C — reported firmly, without the accusation.
+ */
+export function isHardSecret(f: SecretFinding): boolean {
+  return isGradedSecret(f) && f.severity === 'high' && f.commented !== true;
+}
+
 export function gradeSecrets(findings: SecretFinding[], host = ''): SecretsScanResult {
-  const high = findings.filter((f) => f.severity === 'high');
-  const grade: Grade = high.length ? 'F' : findings.length ? 'C' : 'A';
-  const score = high.length ? 8 : findings.length ? 62 : 100;
+  const hard = findings.filter(isHardSecret);
+  const soft = findings.filter((f) => isGradedSecret(f) && !isHardSecret(f));
+  const grade: Grade = hard.length ? 'F' : soft.length ? 'C' : 'A';
+  const score = hard.length ? 8 : soft.length ? 62 : 100;
   return {
     host,
     findings,
     grade,
     score,
-    summary: high.length
-      ? `${high.length} secret key${high.length === 1 ? '' : 's'} exposed in your frontend code`
-      : findings.length
-        ? `${findings.length} key${findings.length === 1 ? '' : 's'} worth double-checking`
-        : 'No secret keys found in your client code ✅',
+    summary: hard.length
+      ? `${hard.length} secret key${hard.length === 1 ? '' : 's'} exposed in your frontend code`
+      : soft.length
+        ? `${soft.length} key${soft.length === 1 ? '' : 's'} worth double-checking`
+        : findings.length
+          ? // Everything we found was unreachable from the internet. Say so
+            // rather than printing a bare tick, which would hide the finding.
+            `No usable secrets — ${findings.length} local-only credential${findings.length === 1 ? '' : 's'} reported below`
+          : 'No secret keys found in your client code ✅',
   };
 }

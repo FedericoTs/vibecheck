@@ -8,6 +8,7 @@ import { scanFirebase, extractCollections, firebaseConfigFromText, type Firebase
 import { unzipSync } from 'fflate';
 import { extractScannableText, analyzeBinaryText } from '@/lib/scan/binary';
 import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
+import type { CheckEvidence } from '@/lib/scan/evidence';
 import { buildScanOutcome, buildRepoOutcome, nextCountState } from '@/lib/scan/telemetry';
 import { buildFixPrompt, buildRepoFixPrompt, fixFor } from '@/lib/scan/fixes';
 import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals, CrawlerMatrix } from '@/components/report-visuals';
@@ -50,14 +51,54 @@ const SCAN_STEPS = [
   'fundamentals',
 ];
 
+/**
+ * The request that proves a finding, offered next to it.
+ *
+ * A grade is arguable and a sentence is arguable; a command the owner pastes
+ * into their own terminal is not. This is the same move the proof headline
+ * makes, applied to every check that already had the observation in hand.
+ */
+function EvidenceLine({ evidence }: { evidence: CheckEvidence }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <span className="mt-1.5 block">
+      <span className="flex items-start gap-2">
+        <code className="min-w-0 flex-1 overflow-x-auto whitespace-pre border border-line bg-canvas px-2 py-1.5 font-mono text-[11px] leading-relaxed text-safe">
+          {evidence.command}
+        </code>
+        <button
+          type="button"
+          onClick={() => {
+            navigator.clipboard?.writeText(evidence.command).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            });
+            track('evidence_copied');
+          }}
+          className="shrink-0 border border-line px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-faint transition-colors hover:border-muted hover:text-ink"
+        >
+          {copied ? 'copied' : 'copy'}
+        </button>
+      </span>
+      <span className="mt-1 block text-[11px] leading-relaxed text-faint">{evidence.label}</span>
+    </span>
+  );
+}
+
 /** One ✓/✗ row, with its fix inline when it failed. */
 function CheckRow({ c, categoryKey }: { c: CheckItem; categoryKey: string }) {
   return (
     <li className="flex items-start gap-2.5 px-4 py-2.5">
-      <span className={`mt-px font-mono text-sm ${c.pass ? 'text-safe' : 'text-danger'}`}>{c.pass ? '✓' : '✗'}</span>
+      <span className={`mt-px font-mono text-sm ${c.pass ? 'text-safe' : c.graded === false ? 'text-warn' : 'text-danger'}`}>
+        {c.pass ? '✓' : c.graded === false ? '!' : '✗'}
+      </span>
       <div className="min-w-0 flex-1">
         <span className={`text-sm ${c.pass ? 'text-muted' : 'text-ink'}`}>{c.label}</span>
+        {/* A reported-not-graded row must not read as an accusation, so it says
+            so on its own line rather than relying on the marker alone. */}
+        {c.graded === false && <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-warn">reported, not graded</span>}
         {c.detail && <span className="mt-0.5 block break-words font-mono text-xs text-faint">{c.detail}</span>}
+        {c.evidence && <EvidenceLine evidence={c.evidence} />}
         {!c.pass && (
           <span className="mt-1.5 block border-l border-warn/40 pl-2.5 text-xs leading-relaxed text-muted">
             <span className="text-warn">Fix: </span>
@@ -1178,9 +1219,32 @@ export default function Home() {
             </div>
           )}
 
+          {/* The database is the check that matters most, and when we cannot
+              find one we previously said NOTHING — the report simply omitted the
+              category and printed a grade. That is the silent false pass this
+              tool exists to catch, so it is now stated outright. The condition
+              on the block below used to carry this same job and had it exactly
+              backwards: the app we COULD NOT probe is the one that needs telling. */}
+          {!report.categories.some((c) => c.key === 'supabase' || c.key === 'firebase') && (
+            <div className="mt-6 border border-warn/40 bg-panel px-4 py-3">
+              <p className="font-mono text-xs text-warn">Your database was not checked</p>
+              <p className="mt-1 text-xs leading-relaxed text-faint">
+                We look for backend configuration in the JavaScript your app serves, and found none.
+                That means one of: you don&rsquo;t use a hosted database; you use a provider we
+                don&rsquo;t recognise yet; or your Supabase sits behind a custom domain or is
+                self-hosted, which we only detect at <span className="text-muted">*.supabase.co</span>.
+                <span className="text-ink"> This grade says nothing about your database</span> — not
+                checked is not the same as clean.
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-faint">
+                To check it directly, run <span className="text-muted">App backend</span> mode and paste
+                your project URL and publishable anon key — it runs in your browser and never reaches us.
+              </p>
+            </div>
+          )}
+
           {/* What a URL scanner genuinely cannot see — stated plainly, because a
-              silent limit reads as "checked and clean". Only shown when a
-              database was actually found, since otherwise it is irrelevant. */}
+              silent limit reads as "checked and clean". */}
           {report.categories.some((c) => c.key === 'supabase' || c.key === 'firebase') && (
             <div className="mt-6 border border-line bg-panel p-5">
               <p className="kicker mb-2">What this scan cannot see</p>

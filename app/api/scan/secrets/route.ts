@@ -110,6 +110,7 @@ export async function POST(request: Request): Promise<Response> {
     ...gradeSecrets(findings, finalUrl.host),
     sourceMaps: {
       exposed: exposedMaps,
+      mapUrls: mapScan.exposed.map((e) => e.mapUrl).filter((u) => u && u !== 'inline'),
       checked: mapScan.checked > 0,
       annotated: mapScan.annotated,
       unresolved: mapScan.unresolved,

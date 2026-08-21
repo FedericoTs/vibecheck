@@ -1,6 +1,8 @@
 import type { SupabaseScanResult, Grade } from './types';
 import type { HeadersScanResult } from './headers';
 import type { PathsScanResult } from './paths';
+import { fileEvidence, routeEvidence, headerEvidence, dnsEvidence, sourceMapEvidence, tableEvidence, type CheckEvidence } from './evidence';
+import { isGradedSecret, isHardSecret } from './secrets';
 import type { SecretsScanResult } from './secrets';
 import type { FundamentalsResult } from './fundamentals';
 import type { LighthouseResult } from './lighthouse';
@@ -28,6 +30,19 @@ export interface CheckItem {
   detail?: string;
   /** Only meaningful on a FAILING check — how much it actually matters. */
   severity?: Severity;
+  /**
+   * False when a finding is SHOWN but must not move the grade or the issue
+   * count — the crawler-matrix and repo-mode precedent. Used where a legitimate
+   * explanation exists that we cannot rule out from outside, so an accusation
+   * would be unearned. Absent means graded, so existing checks are unaffected.
+   */
+  graded?: boolean;
+  /**
+   * The literal request that produced this result, so a finding is reproducible
+   * rather than asserted. Never contains a credential: keys travel as headers,
+   * and any key involved is the user's own publishable one.
+   */
+  evidence?: CheckEvidence;
 }
 
 export const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low'];
@@ -43,6 +58,7 @@ export function severityCounts(report: Report): Record<Severity, number> {
     if (c.group !== 'security') continue;
     for (const check of c.checks) {
       if (check.pass) continue;
+      if (check.graded === false) continue; // reported, but not an accusation
       out[check.severity ?? 'medium'] += 1;
     }
   }
@@ -108,6 +124,13 @@ const VERDICT: Record<Grade, string> = {
   F: 'Wide open. Anyone can read your data or walk through the front door.',
 };
 
+/**
+ * The evidence builders return null when a value cannot be safely quoted; a
+ * CheckItem wants undefined. Missing evidence is always acceptable — it degrades
+ * a finding to the sentence it used to be, never to a wrong command.
+ */
+const ev = (e: CheckEvidence | null): CheckEvidence | undefined => e ?? undefined;
+
 /** Merge the scans into one report card. The headline grade is security-only. */
 export function combineReport(inp: ReportInputs): Report {
   const categories: ReportCategory[] = [];
@@ -130,6 +153,10 @@ export function combineReport(inp: ReportInputs): Report {
                 (f.columns?.length ? ` — exposes ${describeColumns(f.columns)}` : '')
               : 'not readable by the anon key',
             severity: 'critical' as const,
+            // Only an EXPOSED table gets the command. Handing someone a curl for
+            // a table that is correctly locked down invites them to run it, see
+            // a 401, and conclude the tool is broken.
+            evidence: f.exposed && f.probeUrl ? ev(tableEvidence(f.probeUrl)) : undefined,
           }))
         : [{ label: 'No tables reachable to test', pass: true }];
 
@@ -209,10 +236,36 @@ export function combineReport(inp: ReportInputs): Report {
 
   if (inp.secrets) {
     const s = inp.secrets;
-    issueCount += s.findings.length;
+    // Only findings that can move the grade count as issues. A localhost DSN is
+    // reported, never counted — the same rule repo mode has always applied.
+    issueCount += s.findings.filter(isGradedSecret).length;
     securityGrades.push(s.grade);
     const checks: CheckItem[] = s.findings.length
-      ? s.findings.map((f) => ({ label: f.label, pass: false, detail: f.redacted, severity: f.severity === 'high' ? ('critical' as const) : f.severity }))
+      ? s.findings.map((f) => {
+          if (!isGradedSecret(f)) {
+            return {
+              label: `Local dev credentials (${f.label})`,
+              pass: false,
+              graded: false,
+              severity: 'low' as const,
+              detail: `${f.redacted} — points at a local or private host, so it is not reachable from the internet. Reported, not graded.`,
+            };
+          }
+          if (!isHardSecret(f)) {
+            return {
+              label: `${f.label} on a commented-out line`,
+              pass: false,
+              severity: 'medium' as const,
+              detail: `${f.redacted} — commenting it out did not un-publish it: these bytes are being served to anyone who fetches this file. Harmless if it was always a placeholder; rotate it if it was ever real.`,
+            };
+          }
+          return {
+            label: f.label,
+            pass: false,
+            detail: f.redacted,
+            severity: f.severity === 'high' ? ('critical' as const) : f.severity,
+          };
+        })
       : [
           {
             label: 'No secret keys in the client bundle',
@@ -256,6 +309,9 @@ export function combineReport(inp: ReportInputs): Report {
         pass: n === 0,
         detail,
         severity: 'medium',
+        // The map URL, never the chunk URL: curling the chunk shows minified
+        // JS, which would look like the opposite of the finding.
+        evidence: n > 0 && sm.mapUrls?.length ? ev(sourceMapEvidence(sm.mapUrls[0])) : undefined,
       });
     }
     categories.push({ key: 'secrets', group: 'security', label: 'Exposed secrets', grade: s.grade, summary: s.summary, checks });
@@ -305,6 +361,7 @@ export function combineReport(inp: ReportInputs): Report {
           pass: f.verdict !== 'exposed',
           detail: f.verdict === 'inconclusive' ? `couldn't be determined — ${f.detail}` : f.detail,
           severity: f.kind === 'data' ? ('critical' as const) : f.kind === 'admin' ? ('high' as const) : ('medium' as const),
+          evidence: f.verdict === 'exposed' ? ev(routeEvidence(r.host, f.path)) : undefined,
         }))
       : [{ label: 'No admin or debug routes reachable', pass: true, detail: `${r.findings.length} common paths checked` }];
     categories.push({ key: 'routes', group: 'security', label: 'Admin & debug routes', grade: r.grade, summary: r.summary, checks });
@@ -314,14 +371,26 @@ export function combineReport(inp: ReportInputs): Report {
     const p = inp.paths;
     issueCount += p.exposed.length;
     securityGrades.push(p.grade);
-    const checks: CheckItem[] = p.findings.map((f) => ({ label: f.label, pass: !f.exposed, detail: f.exposed ? 'publicly served' : undefined, severity: f.severity }));
+    const checks: CheckItem[] = p.findings.map((f) => ({
+      label: f.label,
+      pass: !f.exposed,
+      detail: f.exposed ? 'publicly served' : undefined,
+      severity: f.severity,
+      evidence: f.exposed ? ev(fileEvidence(p.host, f.path)) : undefined,
+    }));
     categories.push({ key: 'paths', group: 'security', label: 'Exposed files', grade: p.grade, summary: p.summary, checks });
   }
   if (inp.headers) {
     const h = inp.headers;
     issueCount += h.missing.length;
     securityGrades.push(h.grade);
-    const checks: CheckItem[] = h.checks.map((c) => ({ label: c.label, pass: c.present, detail: c.present ? undefined : 'not set on your responses', severity: c.severity }));
+    const checks: CheckItem[] = h.checks.map((c) => ({
+      label: c.label,
+      pass: c.present,
+      detail: c.present ? undefined : 'not set on your responses',
+      severity: c.severity,
+      evidence: c.present ? undefined : ev(headerEvidence(h.host, c.key)),
+    }));
     categories.push({ key: 'headers', group: 'security', label: 'Security headers', grade: h.grade, summary: h.summary, checks });
   }
 
@@ -338,7 +407,13 @@ export function combineReport(inp: ReportInputs): Report {
     const e = inp.email;
     issueCount += e.failed.length;
     securityGrades.push(e.grade);
-    const checks: CheckItem[] = e.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail, severity: c.severity }));
+    const checks: CheckItem[] = e.checks.map((c) => ({
+      label: c.label,
+      pass: c.pass,
+      detail: c.detail,
+      severity: c.severity,
+      evidence: c.pass || !/^(spf|dmarc)$/.test(c.key) ? undefined : ev(dnsEvidence(e.host, c.key as 'spf' | 'dmarc')),
+    }));
     categories.push({ key: 'email', group: 'security', label: 'Email spoofing protection', grade: e.grade, summary: e.summary, checks });
   }
 

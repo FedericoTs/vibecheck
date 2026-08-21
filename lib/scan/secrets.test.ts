@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findSecrets, jwtRole, redact, gradeSecrets, isSourceMap, sourcesFromMap, countPublicGoogleKeys, type SecretFinding } from './secrets';
+import { findSecrets, jwtRole, redact, gradeSecrets, isGradedSecret, isHardSecret, isSourceMap, sourcesFromMap, countPublicGoogleKeys, type SecretFinding } from './secrets';
 
 const b64url = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const jwt = (payload: object) => `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(payload)}.abcdefghij`;
@@ -151,5 +151,68 @@ describe('comment-awareness — a placeholder in a comment is not a leak', () =>
   it('flags a routable host and spares a local one', () => {
     expect(findSecrets('DATABASE_URL=postgres://u:p@db.prod.example.com:5432/x').find((x) => x.id === 'db-url')?.local).toBeUndefined();
     expect(findSecrets('DATABASE_URL=postgres://postgres:postgres@localhost:54322/x').find((x) => x.id === 'db-url')?.local).toBe(true);
+  });
+});
+
+/**
+ * Regression: repo mode has always refused to grade an unreachable credential,
+ * but the URL and mobile paths never got the same rule — so a localhost DSN
+ * recovered from a published source map scored an F. Nothing tested it, which
+ * is exactly why it shipped.
+ */
+describe('grading parity with repo mode', () => {
+  const finding = (over: Partial<SecretFinding> = {}): SecretFinding => ({
+    id: 'db-url',
+    label: 'Database connection string',
+    severity: 'high',
+    redacted: 'postgres://postgres:****@localhost:5432/app',
+    ...over,
+  });
+
+  it('does NOT grade a credential pointing at a local or private host', () => {
+    const r = gradeSecrets([finding({ local: true })]);
+    expect(r.grade).toBe('A');
+    // ...but it is still reported, not silently dropped.
+    expect(r.findings).toHaveLength(1);
+    expect(r.summary).toMatch(/local-only/i);
+    expect(r.summary).not.toMatch(/exposed/i);
+  });
+
+  it('still grades the same string when it points somewhere reachable', () => {
+    expect(gradeSecrets([finding({ redacted: 'postgres://u:****@db.example.com/app' })]).grade).toBe('F');
+  });
+
+  it('softens a commented-out key to C rather than excusing it', () => {
+    // Deliberately NOT repo mode's free pass: these bytes are being served, so
+    // commenting it out did not un-publish it. But it may be a placeholder.
+    const r = gradeSecrets([finding({ id: 'stripe-secret', label: 'Stripe secret key', commented: true })]);
+    expect(r.grade).toBe('C');
+    expect(r.summary).toMatch(/double-check/i);
+  });
+
+  it('an uncommented live key is still an F', () => {
+    expect(gradeSecrets([finding({ id: 'stripe-secret', label: 'Stripe secret key' })]).grade).toBe('F');
+  });
+
+  it('grades the worst finding when reachable and unreachable ones are mixed', () => {
+    const r = gradeSecrets([finding({ local: true }), finding({ id: 'aws-key', label: 'AWS access key id' })]);
+    expect(r.grade).toBe('F');
+    expect(r.summary).toMatch(/^1 secret key exposed/);
+  });
+
+  it('is still an A when there is genuinely nothing', () => {
+    expect(gradeSecrets([]).grade).toBe('A');
+  });
+});
+
+describe('grading predicates', () => {
+  const f = (o: Partial<SecretFinding>): SecretFinding =>
+    ({ id: 'x', label: 'x', severity: 'high', redacted: '…', ...o }) as SecretFinding;
+
+  it('separates "cannot be reached" from "might be a placeholder"', () => {
+    expect(isGradedSecret(f({ local: true }))).toBe(false);
+    expect(isGradedSecret(f({ commented: true }))).toBe(true); // served bytes are served
+    expect(isHardSecret(f({ commented: true }))).toBe(false); // ...but not an accusation
+    expect(isHardSecret(f({}))).toBe(true);
   });
 });
