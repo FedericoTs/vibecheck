@@ -10,6 +10,12 @@ export interface TableFinding {
   exposed: boolean;
   /** total rows the anon role can see (from the PostgREST count header), when known. */
   rowsVisible: number | null;
+  /**
+   * The literal request that proved it — so the finding is reproducible rather
+   * than asserted. Contains no credential: the anon key travels as a header,
+   * and it is the user's own public key in any case. Never leaves the browser.
+   */
+  probeUrl?: string;
   error?: string;
 }
 

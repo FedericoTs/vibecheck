@@ -124,6 +124,121 @@ function CategoryCard({ c }: { c: ReportCategory }) {
   );
 }
 
+/**
+ * A finding the browser PROVED, rather than inferred.
+ *
+ * The distinction is the whole product. Every other check here reasons from a
+ * pattern — a header that is absent, a version that matches an advisory, a
+ * filename that looks a certain way — and reasoning can be wrong, which is how
+ * a scanner ends up accusing correct code. This one executed a request with the
+ * app's own public key and read what came back. It cannot be wrong, and it is
+ * the only finding the owner can independently re-run in ten seconds.
+ */
+interface Proof {
+  table: string;
+  rows: number | null;
+  columns: string[];
+  probeUrl?: string;
+  /** Their own publishable key — already in their bundle, by design. */
+  anonKey?: string;
+}
+
+/** The most alarming proven finding, or null when nothing was proven. */
+function pickProof(inputs: ReportInputs | null, anonKey?: string): Proof | null {
+  const sb = inputs?.supabase;
+  if (!sb?.ok) return null;
+  const exposed = sb.findings.filter((f) => f.exposed);
+  if (exposed.length === 0) return null;
+  // Lead with the table exposing the most rows — that is the sentence that
+  // lands, and the one they will screenshot.
+  const worst = [...exposed].sort((a, b) => (b.rowsVisible ?? 0) - (a.rowsVisible ?? 0))[0];
+  return {
+    table: worst.table,
+    rows: worst.rowsVisible,
+    columns: worst.columns ?? [],
+    probeUrl: worst.probeUrl,
+    anonKey,
+  };
+}
+
+/** Columns whose exposure is the part a person actually feels. */
+const SENSITIVE_COL = /^(email|phone|tel|mobile|address|street|postcode|zip|dob|birth|ssn|tax|iban|card|stripe|password|hash|token|secret|api_key|salary|ip_address)/i;
+
+function ProofHeadline({ proof }: { proof: Proof }) {
+  const [copied, setCopied] = useState(false);
+  const sensitive = proof.columns.filter((c) => SENSITIVE_COL.test(c));
+  const rowText =
+    proof.rows == null ? 'rows' : `${proof.rows.toLocaleString('en-GB')} row${proof.rows === 1 ? '' : 's'}`;
+
+  const curl = proof.probeUrl
+    ? `curl '${proof.probeUrl}' \\\n  -H 'apikey: ${proof.anonKey ?? '<your anon key>'}'`
+    : null;
+
+  function copyCurl(): void {
+    if (!curl) return;
+    track('proof_repro_copied', { table: proof.table });
+    navigator.clipboard?.writeText(curl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    });
+  }
+
+  return (
+    <div className="border border-danger/50 bg-panel">
+      <div className="border-b border-danger/30 px-5 py-2.5">
+        <p className="kicker text-danger">Proven — we ran this against your app just now</p>
+      </div>
+
+      <div className="p-5">
+        <p className="font-display text-2xl leading-snug text-ink sm:text-3xl">
+          Anyone can read your <span className="text-danger">{proof.table}</span> table.
+        </p>
+        <p className="mt-2 text-sm leading-relaxed text-muted">
+          Using the public key that already ships in your JavaScript, this request returned{' '}
+          <span className="text-ink">{rowText}</span>
+          {sensitive.length > 0 ? (
+            <>
+              {' '}
+              including <span className="text-ink">{sensitive.slice(0, 4).join(', ')}</span>
+            </>
+          ) : proof.columns.length > 0 ? (
+            <>
+              {' '}
+              including <span className="text-ink">{proof.columns.slice(0, 4).join(', ')}</span>
+            </>
+          ) : null}
+          . No login, no exploit — this is what a stranger gets.
+        </p>
+
+        {curl && (
+          <>
+            {/* Reproducible or it is just another claim. */}
+            <pre className="mt-4 overflow-x-auto border border-line bg-canvas px-3 py-2.5 font-mono text-xs leading-relaxed text-safe">
+              {curl}
+            </pre>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                onClick={copyCurl}
+                className="border border-ink bg-ink px-4 py-2 font-mono text-xs font-medium uppercase tracking-wider text-canvas transition hover:bg-transparent hover:text-ink"
+              >
+                {copied ? '✓ copied — run it yourself' : 'copy the proof'}
+              </button>
+              <span className="font-mono text-xs text-faint">
+                run it anywhere · you will get the same rows
+              </span>
+            </div>
+          </>
+        )}
+
+        <p className="mt-4 border-t border-line pt-3 text-xs leading-relaxed text-faint">
+          This ran in your browser, against your database, with your key. We never saw the request or a
+          single row of what it returned.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function CategoryList({ categories }: { categories: ReportCategory[] }) {
   return (
     <div className="space-y-3">
@@ -388,6 +503,10 @@ export default function Home() {
   const [notifyError, setNotifyError] = useState('');
   const [done, setDone] = useState<string[]>([]);
   const report = useMemo(() => (inputs ? combineReport(inputs) : null), [inputs]);
+  // The key the probe actually used — typed or auto-discovered — so the
+  // reproduction we print is the request that really ran.
+  const [probeKey, setProbeKey] = useState('');
+  const proof = useMemo(() => pickProof(inputs, probeKey), [inputs, probeKey]);
   // Point-in-time stamp for the share badge — a scan is a moment, not a standing promise.
   const badgeDate = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 
@@ -488,6 +607,7 @@ export default function Home() {
           ? { url: sbUrl, anonKey }
           : secrets?.discovered ?? null;
       if (creds) setAutoDetected(!(sbUrl.trim() && anonKey.trim()));
+      setProbeKey(creds?.anonKey ?? '');
 
       // Supabase and Firebase both probe from HERE, in the browser.
       const [sb, fb] = await Promise.all([
@@ -955,8 +1075,20 @@ export default function Home() {
 
       {report && (
         <section>
-          {/* the headline — this is the screenshot people share */}
-          <div className={`border bg-panel ${report.issueCount > 0 ? 'border-danger/40' : 'border-safe/40'}`}>
+          {/*
+            THE PROOF COMES FIRST.
+
+            A letter grade is the same currency every other scanner prints, and
+            it is the inference-shaped part of this product — arguable by
+            definition. A request the owner can paste into their own terminal
+            and watch return their users' rows is not arguable. So when the
+            browser actually executed a request that read data, that request is
+            the headline and the grade moves below it.
+          */}
+          {proof && <ProofHeadline proof={proof} />}
+
+          {/* the grade — the headline when there is nothing proven to show */}
+          <div className={`${proof ? 'mt-4 ' : ''}border bg-panel ${report.issueCount > 0 ? 'border-danger/40' : 'border-safe/40'}`}>
             <div className="flex flex-col items-center gap-5 p-6 text-center sm:flex-row sm:items-center sm:gap-7 sm:text-left">
               <ScoreDial grade={report.overallGrade} />
               <div className="flex min-w-0 flex-1 flex-col justify-center">

@@ -157,6 +157,9 @@ export async function probeTable(
     return {
       table,
       exposed,
+      // Keep the request that produced this verdict. A grade is arguable; a
+      // request the owner can paste and re-run is not.
+      probeUrl: url,
       rowsVisible: exposed ? parseCountHeader(res.headers.get('content-range')) : 0,
       // Column NAMES only. We already had to fetch a row to prove readability;
       // naming the fields makes the finding concrete ("email, phone,
