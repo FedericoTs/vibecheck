@@ -257,3 +257,32 @@ describe('gradeRepo never contradicts what is on screen', () => {
     expect(gradeRepo([{ ...f('medium'), graded: false }])).toBe('A');
   });
 });
+
+describe('file selection spends the budget on what matters', () => {
+  const tree = (paths: string[]): TreeEntry[] => paths.map((path) => ({ path, type: 'blob' }));
+
+  it('reaches the auth-critical files even in a crowded repo', () => {
+    // These previously shared a bucket with every other source file and fell
+    // outside the cap on any real repo.
+    const noise = Array.from({ length: 200 }, (_, i) => `src/components/Widget${i}.tsx`);
+    const picked = selectFiles(tree([...noise, 'middleware.ts', 'lib/auth.ts', 'lib/session.ts', 'lib/db.ts', 'next.config.mjs']), 20);
+    for (const p of ['middleware.ts', 'lib/auth.ts', 'lib/session.ts', 'lib/db.ts', 'next.config.mjs']) {
+      expect(picked).toContain(p);
+    }
+  });
+
+  it('keeps .env first of all', () => {
+    expect(selectFiles(tree(['src/a.ts', '.env', 'lib/auth.ts']), 3)[0]).toBe('.env');
+  });
+
+  it('does not exclude public/ — a key in public/config.json is only visible here', () => {
+    // A URL scan only finds it if the path is guessable, so the repo scan is
+    // the side that can catch it. Last in line, but present.
+    expect(selectFiles(tree(['public/config.json']), 5)).toContain('public/config.json');
+  });
+
+  it('still skips tests, fixtures and node_modules', () => {
+    const picked = selectFiles(tree(['node_modules/x/index.js', '__tests__/a.test.ts', 'src/real.ts']), 10);
+    expect(picked).toEqual(['src/real.ts']);
+  });
+});

@@ -68,13 +68,32 @@ export function selectFiles(tree: TreeEntry[], max = 60): string[] {
     .filter((e) => e.type === 'blob')
     .map((e) => e.path)
     .filter((p) => scannable(p) && !IGNORED.test('/' + p) && !IGNORED_FILE.test(p) && !isFixture(p));
-  // Prioritise the files that carry the two findings we care about most.
+  /**
+   * Explicit tiers, because the budget is smaller than most repos.
+   *
+   * The old five-bucket sort left middleware.ts, lib/auth.ts, lib/session.ts
+   * and lib/db.ts in the same undifferentiated bucket as every other source
+   * file, so on a real repo they fell outside the cap — and the files most
+   * likely to carry an auth mistake were the ones never read.
+   *
+   * public/** is deliberately KEPT, at the lowest tier rather than excluded. A
+   * key committed to public/config.json is a common vibe-coded mistake, and the
+   * repo scan is the only side that can see it: a URL scan finds it only if the
+   * path happens to be guessable.
+   */
   const priority = (p: string): number => {
+    const f = p.toLowerCase();
     if (/(^|\/)\.env/i.test(p)) return 0; // committed secrets
-    if (isApiRouteFile(p)) return 1; // cross-tenant IDOR
-    if (/(^|\/)(config|settings|constants|secrets)\./i.test(p)) return 2;
-    if (/\.sql$/i.test(p)) return 3;
-    return 4;
+    // Config that decides how the whole app is deployed and secured.
+    if (/(^|\/)(next\.config\.[a-z]+|middleware\.[tj]sx?|vercel\.json|wrangler\.toml|firebase\.json|firestore\.rules|\.npmrc)$/.test(f)) return 1;
+    if (/(^|\/)(supabase\/config\.toml|docker-compose[\w.-]*\.ya?ml)$/.test(f)) return 1;
+    if (isApiRouteFile(p)) return 2; // cross-tenant IDOR
+    // The modules that actually implement auth, sessions and data access.
+    if (/(auth|session|login|token|jwt|rbac|permission|policy|middleware|supabase|prisma|admin|db)[\w.-]*\.[tj]sx?$/.test(f)) return 3;
+    if (/(^|\/)(config|settings|constants|secrets)\./i.test(p)) return 4;
+    if (/\.sql$/i.test(p)) return 5;
+    if (/(^|\/)public\//i.test(p)) return 8; // last, but never excluded
+    return 7;
   };
   return files.sort((a, b) => priority(a) - priority(b)).slice(0, max);
 }
