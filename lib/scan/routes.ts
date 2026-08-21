@@ -38,6 +38,14 @@ export interface RoutesScanResult {
   host: string;
   findings: RouteFinding[];
   exposed: RouteFinding[];
+  /** How many probes came from the app's own bundle rather than the guess list. */
+  routesFromBundle?: number;
+  /**
+   * Routes the bundle advertises that we deliberately did NOT request, because
+   * their names imply a write. Reported so the owner can check them, never
+   * touched by us.
+   */
+  refused?: string[];
   grade: Grade;
   score: number;
   summary: string;

@@ -390,6 +390,21 @@ export function combineReport(inp: ReportInputs): Report {
           evidence: f.verdict === 'exposed' ? ev(routeEvidence(r.host, f.path)) : undefined,
         }))
       : [{ label: 'No admin or debug routes reachable', pass: true, detail: `${r.findings.length} common paths checked` }];
+    if (r.refused?.length) {
+      // Reported, never graded, and never requested. Saying so plainly is the
+      // point: a scanner that will not touch a route named "purge-all" is
+      // making a claim about itself that a scanner hammering paths cannot.
+      checks.push({
+        label: `${r.refused.length} route${r.refused.length === 1 ? '' : 's'} we refused to touch`,
+        pass: false,
+        graded: false,
+        severity: 'low',
+        detail:
+          `your bundle advertises ${r.refused.slice(0, 4).join(', ')}` +
+          (r.refused.length > 4 ? ` +${r.refused.length - 4} more` : '') +
+          `. The names imply they change something, and we cannot verify you own this app, so we did not request them. Check them yourself.`,
+      });
+    }
     categories.push({ key: 'routes', group: 'security', label: 'Admin & debug routes', grade: r.grade, summary: r.summary, checks });
   }
 

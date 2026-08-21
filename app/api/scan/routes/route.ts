@@ -3,6 +3,8 @@ import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { safeFetch, UA } from '@/lib/scan/fetch';
 import { ROUTE_PROBES, classifyRoute, gradeRoutes, type RouteProbe, type RouteFinding } from '@/lib/scan/routes';
+import { extractRoutes } from '@/lib/scan/bundle-routes';
+import { scriptUrls, fetchScript } from '@/lib/scan/bundle';
 
 export const runtime = 'nodejs';
 
@@ -85,6 +87,30 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'Could not reach that URL' }, { status: 502 });
   }
 
-  const findings = await mapLimit(ROUTE_PROBES, CONCURRENCY, (p) => probeOne(origin, p, baseline));
-  return NextResponse.json(gradeRoutes(findings, target.host));
+  // The app's own bundle names its real routes. Probing those is the same
+  // legality as probing /admin — a public GET — with a far higher hit rate and
+  // a finding that is self-evidently about them rather than about our guess list.
+  let discovered: RouteProbe[] = [];
+  let refused: RouteProbe[] = [];
+  try {
+    const scripts = scriptUrls(baseline, target, 6);
+    const code = (await Promise.all(scripts.map(fetchScript))).join('\n');
+    const extracted = extractRoutes(code, scripts, 12);
+    // Never probe a path the fixed list already covers.
+    const known = new Set(ROUTE_PROBES.map((p) => p.path));
+    discovered = extracted.probes.filter((p) => !known.has(p.path));
+    refused = extracted.refused;
+  } catch {
+    /* bundle unreadable — fall back to the fixed list, which still runs */
+  }
+
+  const findings = await mapLimit([...ROUTE_PROBES, ...discovered], CONCURRENCY, (p) =>
+    probeOne(origin, p, baseline),
+  );
+  return NextResponse.json({
+    ...gradeRoutes(findings, target.host),
+    routesFromBundle: discovered.length,
+    // Reported, never requested. See lib/scan/bundle-routes.ts.
+    refused: refused.map((r) => r.path),
+  });
 }
