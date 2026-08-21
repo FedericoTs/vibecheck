@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { combineReport, severityCounts } from './report';
+import { combineReport, severityCounts, type ReportInputs } from './report';
 import type { Report, ReportCategory, CheckItem } from './report';
 import type { SupabaseScanResult } from './types';
 import type { HeadersScanResult } from './headers';
@@ -153,5 +153,50 @@ describe('severityCounts', () => {
 
   it('a clean report has nothing to weight', () => {
     expect(severityCounts(withChecks([{ pass: true }]))).toEqual({ critical: 0, high: 0, medium: 0, low: 0 });
+  });
+});
+
+describe('an unreachable probe is not a pass', () => {
+  it('renders a path we could not reach as ungraded, not a green tick', () => {
+    const r = combineReport({
+      paths: {
+        host: 'x.com',
+        grade: 'A',
+        score: 100,
+        summary: 'Nothing exposed in the 1 of 2 paths we could reach',
+        exposed: [],
+        findings: [
+          { path: '/.env', label: '.env', severity: 'high', exposed: false, checked: false },
+          { path: '/.git/config', label: '.git/config', severity: 'high', exposed: false },
+        ],
+      },
+    } as unknown as ReportInputs);
+    const paths = r.categories.find((c) => c.key === 'paths')!;
+    const unreachable = paths.checks.find((c) => c.label === '.env')!;
+    const checked = paths.checks.find((c) => c.label === '.git/config')!;
+
+    expect(unreachable.pass).toBe(false); // not a tick
+    expect(unreachable.graded).toBe(false); // but not an accusation either
+    expect(checked.pass).toBe(true);
+    // It must not inflate the issue count or drag the grade.
+    expect(r.issueCount).toBe(0);
+    expect(severityCounts(r).high).toBe(0);
+  });
+
+  it('renders an unreachable ROUTE the same way', () => {
+    const r = combineReport({
+      routes: {
+        host: 'x.com',
+        grade: 'A',
+        score: 100,
+        summary: 'ok',
+        exposed: [],
+        findings: [{ path: '/admin', label: '/admin', kind: 'admin', verdict: 'unreachable' }],
+      },
+    } as unknown as ReportInputs);
+    const check = r.categories.find((c) => c.key === 'routes')!.checks[0];
+    expect(check.pass).toBe(false);
+    expect(check.graded).toBe(false);
+    expect(r.issueCount).toBe(0);
   });
 });

@@ -35,7 +35,8 @@ async function probeOne(origin: string, probe: RouteProbe, baseline: string): Pr
       baseline,
     );
   } catch {
-    return { path: probe.path, label: probe.label, kind: probe.kind, verdict: 'absent' };
+    // Never 'absent' — we did not learn that it is not there, we learned nothing.
+    return { path: probe.path, label: probe.label, kind: probe.kind, verdict: 'unreachable' };
   } finally {
     clearTimeout(timer);
   }

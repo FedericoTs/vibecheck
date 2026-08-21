@@ -25,6 +25,15 @@ export interface PathFinding {
   label: string;
   severity: Severity;
   exposed: boolean;
+  /**
+   * False when the probe never got an answer — a timeout, a refused connection,
+   * a WAF blocking us. "We asked and it was not there" and "we could not ask"
+   * are different claims, and only the first one is a pass. Ten simultaneous
+   * GETs at /.env and /.git/config from a datacentre IP is exactly the pattern
+   * a WAF blocks, so this is common, not exotic. Optional so existing callers
+   * and fixtures keep meaning "checked".
+   */
+  checked?: boolean;
 }
 
 export interface PathsScanResult {
@@ -95,8 +104,14 @@ export function classifyPath(probe: PathProbe, status: number, contentType: stri
   };
 }
 
+/** The probe never completed. Reported as unknown — never as "not exposed". */
+export function unreachablePath(probe: PathProbe): PathFinding {
+  return { path: probe.path, label: probe.label, severity: probe.severity, exposed: false, checked: false };
+}
+
 export function gradePaths(findings: PathFinding[], host = ''): PathsScanResult {
   const exposed = findings.filter((f) => f.exposed);
+  const unchecked = findings.filter((f) => f.checked === false).length;
   const score = Math.max(0, 100 - exposed.reduce((s, f) => s + PENALTY[f.severity], 0));
   return {
     host,
@@ -104,9 +119,13 @@ export function gradePaths(findings: PathFinding[], host = ''): PathsScanResult 
     exposed,
     grade: scoreToGrade(score),
     score,
+    // The all-clear tick is a claim about every path we said we would check, so
+    // it cannot be printed when some of them never answered.
     summary:
-      exposed.length === 0
-        ? 'No sensitive files are publicly served ✅'
-        : `${exposed.length} sensitive file${exposed.length === 1 ? '' : 's'} publicly served`,
+      exposed.length > 0
+        ? `${exposed.length} sensitive file${exposed.length === 1 ? '' : 's'} publicly served`
+        : unchecked > 0
+          ? `Nothing exposed in the ${findings.length - unchecked} of ${findings.length} paths we could reach`
+          : 'No sensitive files are publicly served ✅',
   };
 }

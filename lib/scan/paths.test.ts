@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isHtmlFallback, classifyPath, gradePaths, SENSITIVE_PATHS, type PathFinding } from './paths';
+import { isHtmlFallback, classifyPath, gradePaths, SENSITIVE_PATHS, type PathFinding, unreachablePath, type PathProbe } from './paths';
 
 const probe = (path: string) => SENSITIVE_PATHS.find((p) => p.path === path)!;
 
@@ -59,5 +59,43 @@ describe('directory listing', () => {
     expect(classifyPath(probe, 200, 'text/html', '<!doctype html><html><title>My App</title><div id=root></div></html>').exposed).toBe(false);
     expect(classifyPath(probe, 200, 'text/html', '<html><h1>Index of our products</h1></html>').exposed).toBe(false);
     expect(classifyPath(probe, 404, 'text/html', 'not found').exposed).toBe(false);
+  });
+});
+
+/**
+ * The launch-day scenario: ten simultaneous GETs at /.env and /.git/config from
+ * a datacentre IP is exactly what a WAF blocks, and the probe timeout is short
+ * against a stranger's slow origin. Every probe then failed, and the old code
+ * returned exposed:false for each — which graded A and printed "No sensitive
+ * files are publicly served ✅". A clean bill of health for a site we never
+ * successfully asked a single question.
+ */
+describe('probes that could not run', () => {
+  const probe = (path: string): PathProbe => ({
+    path,
+    label: path,
+    severity: 'high',
+    match: () => false,
+  });
+
+  it('never claims the all-clear when a probe never answered', () => {
+    const r = gradePaths([unreachablePath(probe('/.env')), classifyPath(probe('/.git/config'), 404, '', '')]);
+    expect(r.summary).not.toMatch(/No sensitive files are publicly served/);
+    expect(r.summary).toMatch(/1 of 2/);
+  });
+
+  it('still prints the all-clear when everything really was checked', () => {
+    const r = gradePaths([classifyPath(probe('/.env'), 404, '', ''), classifyPath(probe('/.git/config'), 404, '', '')]);
+    expect(r.summary).toMatch(/No sensitive files are publicly served/);
+  });
+
+  it('does NOT accuse the site just because we could not reach it', () => {
+    // The opposite failure — flipping unreachable to exposed — is worse: a false
+    // accusation screenshotted on launch day is unrecoverable.
+    const f = unreachablePath(probe('/.env'));
+    expect(f.exposed).toBe(false);
+    expect(f.checked).toBe(false);
+    expect(gradePaths([f]).exposed).toEqual([]);
+    expect(gradePaths([f]).grade).toBe('A');
   });
 });

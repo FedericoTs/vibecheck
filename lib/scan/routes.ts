@@ -24,7 +24,13 @@ export interface RouteProbe {
   kind: RouteKind;
 }
 
-export type RouteVerdict = 'exposed' | 'protected' | 'absent' | 'inconclusive';
+/**
+ * 'unreachable' means the probe never got an answer — timeout, refused
+ * connection, or a WAF blocking a datacentre IP. It must stay distinct from
+ * 'absent', which is a positive claim that the route is not there. Only one of
+ * those is a pass.
+ */
+export type RouteVerdict = 'exposed' | 'protected' | 'absent' | 'inconclusive' | 'unreachable';
 
 export interface RouteFinding {
   path: string;
@@ -222,6 +228,7 @@ export function classifyRoute(probe: RouteProbe, res: ProbeResponse, baseline: s
 
 export function gradeRoutes(findings: RouteFinding[], host = ''): RoutesScanResult {
   const exposed = findings.filter((f) => f.verdict === 'exposed');
+  const unreached = findings.filter((f) => f.verdict === 'unreachable').length;
   const score = Math.max(0, 100 - exposed.length * 45);
   return {
     host,
@@ -230,8 +237,10 @@ export function gradeRoutes(findings: RouteFinding[], host = ''): RoutesScanResu
     grade: scoreToGrade(score),
     score,
     summary:
-      exposed.length === 0
-        ? 'No unprotected admin or debug routes found ✅'
-        : `${exposed.length} route(s) reachable without logging in ⚠️`,
+      exposed.length > 0
+        ? `${exposed.length} route(s) reachable without logging in ⚠️`
+        : unreached > 0
+          ? `Nothing unprotected in the ${findings.length - unreached} of ${findings.length} routes we could reach`
+          : 'No unprotected admin or debug routes found ✅',
   };
 }

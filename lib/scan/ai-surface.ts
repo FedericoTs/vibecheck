@@ -34,7 +34,13 @@ export interface AiSurfaceProbe {
   kind: AiProbeKind;
 }
 
-export type AiVerdict = 'exposed' | 'protected' | 'absent' | 'inconclusive';
+/**
+ * 'unreachable' means the probe never got an answer — timeout, refused
+ * connection, or a WAF blocking a datacentre IP. It must stay distinct from
+ * 'absent', which is a positive claim that the route is not there. Only one of
+ * those is a pass.
+ */
+export type AiVerdict = 'exposed' | 'protected' | 'absent' | 'inconclusive' | 'unreachable';
 
 export interface AiFinding {
   path: string;

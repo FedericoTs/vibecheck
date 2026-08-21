@@ -711,21 +711,27 @@ export default function Home() {
     // Guarded because a client component still renders once on the server —
     // though in practice `report` is null there, so this returns '#'.
     if (!report || typeof window === 'undefined') return '#';
-    const url = `${window.location.origin}/r?g=${report.overallGrade}&i=${report.issueCount}&p=${report.passed}`;
+    const partial = skipped.length;
+    const url = `${window.location.origin}/r?g=${report.overallGrade}&i=${report.issueCount}&p=${report.passed}&s=${partial}`;
     const n = report.issueCount;
+    // The zero-issue line cannot say "no public exposure found" when checks did
+    // not run: zero issues then means we did not look, and this text goes out
+    // as the user's own public statement about their app.
     const text =
       n === 0
-        ? `Scanned my app with vibecheck — ${report.passed} checks passed, no public exposure found. It looks at what a stranger can already read: exposed database tables, keys in the bundle, dev builds shipped live, source maps, hidden text aimed at AI. Free, no signup.`
+        ? partial > 0
+          ? `Scanned my app with vibecheck — ${report.passed} checks passed and nothing turned up, though ${partial} check${partial === 1 ? '' : 's'} could not run, so this is a partial scan. It looks at what a stranger can already read: exposed database tables, keys in the bundle, dev builds shipped live, source maps. Free, no signup.`
+          : `Scanned my app with vibecheck — ${report.passed} checks passed, no public exposure found. It looks at what a stranger can already read: exposed database tables, keys in the bundle, dev builds shipped live, source maps, hidden text aimed at AI. Free, no signup.`
         : `vibecheck found ${n} issue${n === 1 ? '' : 's'} in my AI-built app (graded ${report.overallGrade}). It shows what a stranger can already read — exposed tables, keys in the bundle, dev builds. Free, no signup, and it hands you the fix.`;
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
-  }, [report]);
+  }, [report, skipped]);
 
   function share() {
     if (!report) return;
     track('result_shared', { grade: report.overallGrade });
     // A shareable link that unfurls into the OG card — grade + issue count only,
     // never the host, key, or findings.
-    const url = `${window.location.origin}/r?g=${report.overallGrade}&i=${report.issueCount}&p=${report.passed}`;
+    const url = `${window.location.origin}/r?g=${report.overallGrade}&i=${report.issueCount}&p=${report.passed}&s=${skipped.length}`;
     navigator.clipboard?.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);

@@ -131,6 +131,25 @@ const VERDICT: Record<Grade, string> = {
  */
 const ev = (e: CheckEvidence | null): CheckEvidence | undefined => e ?? undefined;
 
+/**
+ * A probe that never got an answer is not a pass.
+ *
+ * `pass: false` with `graded: false` renders as the amber "reported, not
+ * graded" row: visibly not a tick, and unable to move the grade or the issue
+ * count in either direction. Flipping it to exposed instead would be worse —
+ * accusing a site because our own request timed out is the unrecoverable
+ * mistake, especially on launch day.
+ */
+function unreachableCheck(label: string): CheckItem {
+  return {
+    label,
+    pass: false,
+    graded: false,
+    severity: 'low',
+    detail: 'we could not reach it — timed out, refused, or blocked us. Not checked, so not cleared.',
+  };
+}
+
 /** Merge the scans into one report card. The headline grade is security-only. */
 export function combineReport(inp: ReportInputs): Report {
   const categories: ReportCategory[] = [];
@@ -364,12 +383,16 @@ export function combineReport(inp: ReportInputs): Report {
     // Only surface what we learned something about; "absent" everywhere is noise.
     const interesting = a.findings.filter((f) => f.verdict !== 'absent');
     const checks: CheckItem[] = interesting.length
-      ? interesting.map((f) => ({
-          label: f.label,
-          pass: f.verdict !== 'exposed',
-          detail: f.verdict === 'inconclusive' ? `couldn't be determined — ${f.detail}` : f.detail,
-          severity: 'high' as const,
-        }))
+      ? interesting.map((f) =>
+          f.verdict === 'unreachable'
+            ? unreachableCheck(f.label)
+            : {
+                label: f.label,
+                pass: f.verdict !== 'exposed',
+                detail: f.verdict === 'inconclusive' ? `couldn't be determined — ${f.detail}` : f.detail,
+                severity: 'high' as const,
+              },
+        )
       : [{ label: 'No exposed AI or MCP endpoints', pass: true, detail: `${a.findings.length} common AI endpoints checked` }];
     categories.push({ key: 'ai', group: 'security', label: 'AI & MCP endpoints', grade: a.grade, summary: a.summary, checks });
   }
@@ -382,13 +405,18 @@ export function combineReport(inp: ReportInputs): Report {
     // "absent" paths would be noise, and "inconclusive" is not an accusation.
     const interesting = r.findings.filter((f) => f.verdict !== 'absent');
     const checks: CheckItem[] = interesting.length
-      ? interesting.map((f) => ({
-          label: f.label,
-          pass: f.verdict !== 'exposed',
-          detail: f.verdict === 'inconclusive' ? `couldn't be determined — ${f.detail}` : f.detail,
-          severity: f.kind === 'data' ? ('critical' as const) : f.kind === 'admin' ? ('high' as const) : ('medium' as const),
-          evidence: f.verdict === 'exposed' ? ev(routeEvidence(r.host, f.path)) : undefined,
-        }))
+      ? interesting.map((f) =>
+          f.verdict === 'unreachable'
+            ? unreachableCheck(f.label)
+            : {
+                label: f.label,
+                pass: f.verdict !== 'exposed',
+                detail: f.verdict === 'inconclusive' ? `couldn't be determined — ${f.detail}` : f.detail,
+                severity:
+                  f.kind === 'data' ? ('critical' as const) : f.kind === 'admin' ? ('high' as const) : ('medium' as const),
+                evidence: f.verdict === 'exposed' ? ev(routeEvidence(r.host, f.path)) : undefined,
+              },
+        )
       : [{ label: 'No admin or debug routes reachable', pass: true, detail: `${r.findings.length} common paths checked` }];
     if (r.refused?.length) {
       // Reported, never graded, and never requested. Saying so plainly is the
@@ -412,13 +440,17 @@ export function combineReport(inp: ReportInputs): Report {
     const p = inp.paths;
     issueCount += p.exposed.length;
     securityGrades.push(p.grade);
-    const checks: CheckItem[] = p.findings.map((f) => ({
-      label: f.label,
-      pass: !f.exposed,
-      detail: f.exposed ? 'publicly served' : undefined,
-      severity: f.severity,
-      evidence: f.exposed ? ev(fileEvidence(p.host, f.path)) : undefined,
-    }));
+    const checks: CheckItem[] = p.findings.map((f) =>
+      f.checked === false
+        ? unreachableCheck(f.label)
+        : {
+            label: f.label,
+            pass: !f.exposed,
+            detail: f.exposed ? 'publicly served' : undefined,
+            severity: f.severity,
+            evidence: f.exposed ? ev(fileEvidence(p.host, f.path)) : undefined,
+          },
+    );
     categories.push({ key: 'paths', group: 'security', label: 'Exposed files', grade: p.grade, summary: p.summary, checks });
   }
   if (inp.headers) {

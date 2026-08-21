@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
-import { SENSITIVE_PATHS, classifyPath, gradePaths, type PathProbe, type PathFinding } from '@/lib/scan/paths';
+import { SENSITIVE_PATHS, classifyPath, unreachablePath, gradePaths, type PathProbe, type PathFinding } from '@/lib/scan/paths';
 
 export const runtime = 'nodejs';
 
@@ -21,7 +21,8 @@ async function probeOne(base: string, probe: PathProbe): Promise<PathFinding> {
     const body = (await res.text()).slice(0, 8192);
     return classifyPath(probe, res.status, ct, body);
   } catch {
-    return classifyPath(probe, 0, '', ''); // unreachable / aborted -> not exposed
+    // Unreachable or aborted. NOT the same as "not exposed" - we never found out.
+    return unreachablePath(probe);
   } finally {
     clearTimeout(t);
   }

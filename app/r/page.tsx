@@ -1,16 +1,19 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-type SP = Promise<{ g?: string; i?: string; p?: string }>;
+type SP = Promise<{ g?: string; i?: string; p?: string; s?: string }>;
 
-function parse(sp: { g?: string; i?: string; p?: string }) {
+function parse(sp: { g?: string; i?: string; p?: string; s?: string }) {
   const g = (sp.g ?? 'F').toUpperCase();
   const grade = ['A', 'B', 'C', 'D', 'F'].includes(g) ? g : 'F';
   const issues = Math.max(0, Math.min(999, parseInt(sp.i ?? '0', 10) || 0));
   // How many checks passed. It is what makes a grade mean something, so it
   // travels with the link and is shown on both the card and this page.
   const passed = Math.max(0, Math.min(999, parseInt(sp.p ?? '0', 10) || 0));
-  return { grade, issues, passed };
+  // Checks that could not run. A shared page is a public claim, so zero issues
+  // on a partial scan must not unfurl as "no public exposure found".
+  const skipped = Math.max(0, Math.min(99, parseInt(sp.s ?? '0', 10) || 0));
+  return { grade, issues, passed, skipped };
 }
 
 function tone(grade: string): string {
@@ -20,15 +23,17 @@ function tone(grade: string): string {
 }
 
 export async function generateMetadata({ searchParams }: { searchParams: SP }): Promise<Metadata> {
-  const { grade, issues, passed } = parse(await searchParams);
+  const { grade, issues, passed, skipped } = parse(await searchParams);
   const title = `This app scored ${grade} on vibecheck`;
   const description =
     issues > 0
       ? `${issues} security issue${issues === 1 ? '' : 's'} found on an AI-built app. Check yours — it's free.`
-      : passed > 0
-        ? `${passed} checks passed — no public exposure found. Check yours — it's free.`
-        : "Check yours — it's free.";
-  const og = `/api/og?g=${grade}&i=${issues}&p=${passed}`;
+      : skipped > 0
+        ? `${passed} checks passed, ${skipped} could not run — a partial scan. Check yours — it's free.`
+        : passed > 0
+          ? `${passed} checks passed — no public exposure found. Check yours — it's free.`
+          : "Check yours — it's free.";
+  const og = `/api/og?g=${grade}&i=${issues}&p=${passed}&s=${skipped}`;
   return {
     title,
     description,
@@ -41,9 +46,13 @@ export async function generateMetadata({ searchParams }: { searchParams: SP }): 
 }
 
 export default async function ResultPage({ searchParams }: { searchParams: SP }) {
-  const { grade, issues, passed } = parse(await searchParams);
+  const { grade, issues, passed, skipped } = parse(await searchParams);
   const issueText =
-    issues === 0 ? 'No issues found' : `${issues} issue${issues === 1 ? '' : 's'} found`;
+    issues > 0
+      ? `${issues} issue${issues === 1 ? '' : 's'} found`
+      : skipped > 0
+        ? 'No issues in what ran'
+        : 'No issues found';
 
   return (
     <main className="mx-auto w-full max-w-2xl px-5 py-10 sm:py-16">
