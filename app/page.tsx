@@ -7,7 +7,8 @@ import { scanSupabase } from '@/lib/scan/supabase';
 import { scanFirebase, extractCollections, firebaseConfigFromText, type FirebaseConfig } from '@/lib/scan/firebase';
 import { unzipSync } from 'fflate';
 import { extractScannableText, analyzeBinaryText } from '@/lib/scan/binary';
-import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
+import { combineReport, type Report, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
+import { buildScanOutcome, buildRepoOutcome } from '@/lib/scan/telemetry';
 import { buildFixPrompt, buildRepoFixPrompt, fixFor } from '@/lib/scan/fixes';
 import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals, CrawlerMatrix } from '@/components/report-visuals';
 import type { HeadersScanResult } from '@/lib/scan/headers';
@@ -176,7 +177,9 @@ function ProofHeadline({ proof }: { proof: Proof }) {
 
   function copyCurl(): void {
     if (!curl) return;
-    track('proof_repro_copied', { table: proof.table });
+    // No table name: it is the user's schema, and this panel is two lines above
+    // a promise that the request never leaves their browser. A count is enough.
+    track('proof_repro_copied', { columns: proof.columns.length });
     navigator.clipboard?.writeText(curl).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2200);
@@ -232,7 +235,11 @@ function ProofHeadline({ proof }: { proof: Proof }) {
 
         <p className="mt-4 border-t border-line pt-3 text-xs leading-relaxed text-faint">
           This ran in your browser, against your database, with your key. We never saw the request or a
-          single row of what it returned.
+          single row of what it returned. We count one anonymous fact — that some scan found an exposed
+          table — with no name, no host, and no row count attached.{' '}
+          <Link href="/legal" className="underline-offset-4 hover:text-ink hover:underline">
+            what we count
+          </Link>
         </p>
       </div>
     </div>
@@ -510,15 +517,26 @@ export default function Home() {
   // Point-in-time stamp for the share badge — a scan is a moment, not a standing promise.
   const badgeDate = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 
-  // Anonymous, cookieless usage analytics. We record the grade, the mode, and the
-  // issue COUNT — never the URL, the key, or the findings — so "we never see your
-  // app" stays literally true; this only tells us how the tool is used.
+  // Anonymous, cookieless outcome counter. Every field is a boolean, a count, or
+  // one of a few fixed words — never the URL, the key, a hostname, a table name,
+  // or a row count, so "we never see your app" stays literally true. The rule is
+  // enforced in lib/scan/telemetry.ts, not merely observed here.
+  //
+  // The refs make it exactly one event per scan: `inputs` is in the dependency
+  // list (it is read, so it must be), and it is written a second time when the
+  // Lighthouse result lands late.
   const lastMode = useRef<'url' | 'backend' | 'mobile'>('url');
+  const countedReport = useRef<Report | null>(null);
+  const countedRepo = useRef<RepoScanResult | null>(null);
   useEffect(() => {
-    if (report) track('scan_completed', { mode: lastMode.current, grade: report.overallGrade, issues: report.issueCount });
-  }, [report]);
+    if (!report || countedReport.current === report) return;
+    countedReport.current = report;
+    track('scan_completed', buildScanOutcome(lastMode.current, report, inputs));
+  }, [report, inputs]);
   useEffect(() => {
-    if (repoResult) track('scan_completed', { mode: 'repo', grade: repoResult.grade, issues: repoResult.findings.length });
+    if (!repoResult || countedRepo.current === repoResult) return;
+    countedRepo.current = repoResult;
+    track('scan_completed', buildRepoOutcome(repoResult));
   }, [repoResult]);
 
   async function run(e: React.FormEvent) {

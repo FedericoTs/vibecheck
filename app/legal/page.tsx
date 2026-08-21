@@ -89,9 +89,37 @@ export default function LegalPage() {
           <li className="flex gap-2">
             <span className="text-faint">·</span>
             <span>
-              We use privacy-friendly, <span className="text-ink">cookieless</span> analytics (Vercel Web Analytics) to
-              count usage — page views, which scan modes are used, grade distributions. No cookies, no cross-site
-              tracking, no personal data, no account.
+              We use privacy-friendly, <span className="text-ink">cookieless</span> analytics (Vercel Web Analytics). No
+              cookies, no cross-site tracking, no personal data, no account.
+            </span>
+          </li>
+          <li className="flex gap-2">
+            <span className="text-faint">·</span>
+            <span>
+              When a scan finishes we count the <span className="text-ink">shape of the result</span>: the scan mode, the
+              grade, how many checks passed and failed, and a yes/no for each kind of problem — was a database
+              reachable, was any table readable by an anonymous key, were dev artifacts served, and so on.{' '}
+              <span className="text-ink">
+                We never record the URL, your keys, hostnames, table or column names, file paths, or row counts.
+              </span>{' '}
+              That is not a promise about our intentions: the rule is that every recorded value must be a yes/no, a
+              number, or one of a few fixed words — which no hostname or table name can be — and it is enforced in code
+              and covered by tests you can read in{' '}
+              <a
+                href="https://github.com/FedericoTs/vibecheck/blob/main/lib/scan/telemetry.ts"
+                className="text-ink underline-offset-4 hover:underline"
+              >
+                lib/scan/telemetry.ts
+              </a>
+              .
+            </span>
+          </li>
+          <li className="flex gap-2">
+            <span className="text-faint">·</span>
+            <span>
+              Why we count it: so we can eventually publish aggregate findings — &ldquo;of N apps scanned, X% exposed at
+              least one table to an anonymous key&rdquo;. Nobody can answer that today. It only works if the counting
+              happens as scans run, because we keep nothing to go back and mine. Counts only, never an app.
             </span>
           </li>
           <li className="flex gap-2">
