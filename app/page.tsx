@@ -10,6 +10,7 @@ import { extractScannableText, analyzeBinaryText } from '@/lib/scan/binary';
 import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
 import type { CheckEvidence } from '@/lib/scan/evidence';
 import { buildScanOutcome, buildRepoOutcome, nextCountState } from '@/lib/scan/telemetry';
+import { CATALOGUE_CLAIM } from '@/lib/scan/catalogue';
 import { buildFixPrompt, buildRepoFixPrompt, fixFor } from '@/lib/scan/fixes';
 import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals, CrawlerMatrix } from '@/components/report-visuals';
 import type { HeadersScanResult } from '@/lib/scan/headers';
@@ -930,7 +931,10 @@ export default function Home() {
             </h1>
             <p className="mt-6 max-w-md text-muted leading-relaxed">
               AI code generators ship the same holes over and over — tables anyone can read, missing
-              headers. Point vibecheck at your app and see what a stranger already can. In seconds.
+              headers. Point vibecheck at your app and see what a stranger already can. In seconds.{' '}
+              <span className="text-muted">
+                {CATALOGUE_CLAIM}+ checks, and it hands you the request that proves each one.
+              </span>
             </p>
           </header>
 
@@ -1207,7 +1211,15 @@ export default function Home() {
                 <p className="kicker text-faint">to fix</p>
               </div>
               <div className="flex-1 px-5 py-3">
-                <p className="font-mono text-lg font-semibold text-muted">{report.total}</p>
+                {/* Both numbers, because either alone misleads. The per-app count
+                    is the honest one and stays the headline; without the
+                    catalogue beside it the tool reads as a third as thorough as
+                    it is, since checks for a backend an app does not have
+                    correctly never run. */}
+                <p className="font-mono text-lg font-semibold text-muted">
+                  {report.total}
+                  <span className="text-sm font-normal text-faint"> / {CATALOGUE_CLAIM}</span>
+                </p>
                 <p className="kicker text-faint">checks run</p>
               </div>
             </div>

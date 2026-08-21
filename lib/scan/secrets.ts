@@ -140,7 +140,7 @@ interface SecretRule {
   regex: RegExp;
 }
 
-const RULES: SecretRule[] = [
+export const SECRET_RULES: SecretRule[] = [
   // Supabase's current privileged key format (the service_role successor).
   // `sb_publishable_…` is deliberately absent — that one is meant to be public.
   { id: 'supabase-secret', label: 'Supabase secret key (bypasses all RLS)', severity: 'high', regex: /\bsb_secret_[A-Za-z0-9_-]{16,}/g },
@@ -209,7 +209,7 @@ export function findSecrets(text: string): SecretFinding[] {
     });
   };
 
-  for (const rule of RULES) {
+  for (const rule of SECRET_RULES) {
     for (const m of text.matchAll(rule.regex)) add(rule.id, rule.label, rule.severity, m[0], m.index ?? -1);
   }
   // Supabase service_role key: a JWT whose role claim is service_role.

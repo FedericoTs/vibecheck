@@ -172,7 +172,7 @@ export interface CrawlerAccess {
 // AI answer-engines whose access decides whether ChatGPT / Claude / Perplexity /
 // Gemini can ever cite you. Blocking any of these is a legitimate choice, so the
 // matrix is REPORTED, never graded.
-const CRAWLERS: Array<{ name: string; token: string; group: 'search' | 'ai'; purpose: string }> = [
+export const CRAWLERS: Array<{ name: string; token: string; group: 'search' | 'ai'; purpose: string }> = [
   { name: 'Googlebot', token: 'googlebot', group: 'search', purpose: 'Google Search' },
   { name: 'Bingbot', token: 'bingbot', group: 'search', purpose: 'Bing · Copilot' },
   { name: 'GPTBot', token: 'gptbot', group: 'ai', purpose: 'OpenAI · training' },
