@@ -97,7 +97,12 @@ export function GET(req: Request): ImageResponse {
   const issues = Math.max(0, Math.min(999, parseInt(searchParams.get('i') ?? '0', 10) || 0));
   const passed = Math.max(0, Math.min(999, parseInt(searchParams.get('p') ?? '0', 10) || 0));
   const color = GRADE_COLOR[raw];
-  const issueText = issues === 0 ? 'No issues found' : `${issues} issue${issues === 1 ? '' : 's'} found`;
+  // Checks that could not run. A shared card is a public claim, and "No issues
+  // found" from a partial scan is a claim we did not earn — so the card says
+  // outright that it is partial rather than quietly rounding up to clean.
+  const skipped = Math.max(0, Math.min(99, parseInt(searchParams.get('s') ?? '0', 10) || 0));
+  const issueText =
+    issues === 0 ? (skipped > 0 ? 'No issues in what ran' : 'No issues found') : `${issues} issue${issues === 1 ? '' : 's'} found`;
 
   return new ImageResponse(
     (
@@ -118,6 +123,11 @@ export function GET(req: Request): ImageResponse {
                   counts that as two child nodes and rejects any div holding
                   more than one without an explicit display. */}
               {passed > 0 && <div style={{ fontSize: 34, marginTop: 12 }}>{`${passed} checks passed`}</div>}
+              {skipped > 0 && (
+                <div style={{ fontSize: 26, color: '#e0a33e', marginTop: 10 }}>
+                  {`partial scan — ${skipped} check${skipped === 1 ? '' : 's'} could not run`}
+                </div>
+              )}
               <div style={{ fontSize: 26, color: MUTED, marginTop: 10 }}>on an AI-built app</div>
             </div>
           </div>

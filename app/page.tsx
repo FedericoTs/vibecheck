@@ -1152,7 +1152,19 @@ export default function Home() {
             <div className="flex flex-col items-center gap-5 p-6 text-center sm:flex-row sm:items-center sm:gap-7 sm:text-left">
               <ScoreDial grade={report.overallGrade} />
               <div className="flex min-w-0 flex-1 flex-col justify-center">
-                <p className="kicker mb-2">Security grade</p>
+                <p className="kicker mb-2">{skipped.length > 0 ? 'Security grade · provisional' : 'Security grade'}</p>
+                {/* A grade computed from a partial scan is not the same claim as
+                    a grade computed from a whole one. Rate limiting WILL fire at
+                    launch — that is its job — so this is the common case, not the
+                    exotic one, and a confident A over an unexamined check is
+                    exactly the "absence of evidence as evidence of absence" bug
+                    this tool exists to catch. */}
+                {skipped.length > 0 && (
+                  <p className="mb-2 border-l-2 border-warn/60 pl-2.5 text-xs leading-relaxed text-warn">
+                    Based on {report.total} of the usual checks — {skipped.length} could not run. Re-run
+                    for a complete grade.
+                  </p>
+                )}
                 {appUrl.trim() && (
                   <p className="mb-2 truncate font-mono text-xs text-faint">
                     {appUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '')}
@@ -1335,7 +1347,23 @@ export default function Home() {
           )}
 
           {/* earn-it badge: only offered on a clean security result */}
-          {report.issueCount === 0 && (
+          {/* A README badge is a STANDING PUBLIC CLAIM, so it requires a complete
+              scan — not merely a scan with no findings. Zero issues on a
+              throttled run means the checks that would have found them never
+              ran, and "no public exposure found" would then be a claim we did
+              not earn, published on the user's own repo. */}
+          {report.issueCount === 0 && skipped.length > 0 && (
+            <div className="mt-8 border border-warn/40 bg-panel p-5">
+              <p className="kicker mb-2 text-warn">No badge for an incomplete scan</p>
+              <p className="text-sm leading-relaxed text-muted">
+                Nothing was found — but {skipped.length} check{skipped.length === 1 ? '' : 's'} could not
+                run, so this is not a clean bill of health and we will not hand you a badge that says it
+                is. Re-run the scan in a minute and it will be here.
+              </p>
+            </div>
+          )}
+
+          {report.issueCount === 0 && skipped.length === 0 && (
             <div className="mt-8 border border-safe/30 bg-panel p-5">
               <p className="kicker mb-2 text-safe">Clean scan — show it off</p>
               <p className="text-sm text-muted">
@@ -1385,7 +1413,7 @@ export default function Home() {
               </div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={`/api/og?g=${report.overallGrade}&i=${report.issueCount}&p=${report.passed}`}
+                src={`/api/og?g=${report.overallGrade}&i=${report.issueCount}&p=${report.passed}&s=${skipped.length}`}
                 alt={`Preview of the card that will appear when you share: grade ${report.overallGrade}, ${report.issueCount} issue${report.issueCount === 1 ? '' : 's'}`}
                 width={1200}
                 height={630}
