@@ -182,6 +182,12 @@ export interface RepoScanResult {
   rateLimit?: { limit: number; remaining: number; reset: number; authenticated: boolean } | null;
   /** Files the tree listed that we could not read. Non-zero means partial coverage. */
   unreadableFiles?: number;
+  /** How many files were selected for reading — the denominator. */
+  filesSelected?: number;
+  /** Dependencies beyond the cap that were never queried. */
+  depsTruncated?: number;
+  /** True when versions came from package.json ranges rather than a lockfile. */
+  dependencyVersionsInferred?: boolean;
   /**
    * 'unknown' when too much of the repo could not be read to stand behind any
    * grade. It must never render as a pass — that is the whole point of it

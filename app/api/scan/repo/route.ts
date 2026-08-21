@@ -178,13 +178,18 @@ const SEV_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3, low:
  * carry a known vulnerability or are outright malicious. Best-effort: any
  * network failure returns no findings rather than a wrong grade.
  */
-async function scanDependencies(owner: string, repo: string, branch: string, tree: TreeEntry[]): Promise<{ findings: RepoFinding[]; deps: Dep[] }> {
+async function scanDependencies(
+  owner: string,
+  repo: string,
+  branch: string,
+  tree: TreeEntry[],
+): Promise<{ findings: RepoFinding[]; deps: Dep[]; depsTruncated: number; usingRangeFloor: boolean }> {
   const manifests = tree
     .map((e) => e.path)
     .filter((p) => DEP_MANIFESTS.some((m) => p === m || p.endsWith('/' + m)) && !/node_modules\//.test(p) && !isFixture(p))
     .sort((a, b) => a.split('/').length - b.split('/').length) // root manifests first
     .slice(0, 6);
-  if (manifests.length === 0) return { findings: [], deps: [] };
+  if (manifests.length === 0) return { findings: [], deps: [], depsTruncated: 0, usingRangeFloor: false };
 
   const loaded = await mapLimit(manifests, 4, async (p) => ({ p, content: await fetchManifest(owner, repo, branch, p) }));
   const lockDeps: Dep[] = [];
@@ -212,8 +217,13 @@ async function scanDependencies(owner: string, repo: string, branch: string, tre
   const deps: Dep[] = [...(lockDeps.length ? lockDeps : pkgDeps), ...reqDeps];
   const uniq = new Map<string, Dep>();
   for (const d of deps) uniq.set(`${d.ecosystem}:${d.name}@${d.version}`, d);
-  const list = [...uniq.values()].slice(0, 500);
-  if (list.length === 0) return { findings: [], deps: list };
+  const DEP_CAP = 500;
+  const allDeps = [...uniq.values()];
+  const list = allDeps.slice(0, DEP_CAP);
+  // Truncation must never be silent: a capped SBOM that says nothing about the
+  // cap reads as a complete inventory, and the deps beyond it were never queried.
+  const depsTruncated = Math.max(0, allDeps.length - list.length);
+  if (list.length === 0) return { findings: [], deps: list, depsTruncated, usingRangeFloor: false };
 
   let batch: unknown;
   try {
@@ -223,15 +233,20 @@ async function scanDependencies(owner: string, repo: string, branch: string, tre
       body: JSON.stringify(osvBatchBody(list)),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) return { findings: [], deps: list };
+    if (!res.ok) return { findings: [], deps: list, depsTruncated, usingRangeFloor };
     batch = await res.json();
   } catch {
-    return { findings: [], deps: list };
+    return { findings: [], deps: list, depsTruncated, usingRangeFloor };
   }
   const vulnerable = parseOsvBatch(list, (batch as { results?: Array<{ vulns?: Array<{ id: string }> }> })?.results);
-  if (vulnerable.length === 0) return { findings: [], deps: list };
+  if (vulnerable.length === 0) return { findings: [], deps: list, depsTruncated, usingRangeFloor };
 
-  const ids = [...new Set(vulnerable.flatMap((v) => v.ids))].slice(0, 30);
+  // A global budget of 30 detail fetches meant a repo with many advisories had
+  // most of them left unclassified — and, before the id-based malware check
+  // above, could lose the MALICIOUS label entirely. 150 at concurrency 6 costs
+  // ~2s of the 60s budget. Ids are sorted so the truncation is at least stable
+  // between runs rather than depending on Set iteration order.
+  const ids = [...new Set(vulnerable.flatMap((v) => v.ids))].sort().slice(0, 150);
   const details = new Map<string, ReturnType<typeof classifyVuln>>();
   await mapLimit(ids, 6, async (id) => {
     try {
@@ -279,7 +294,12 @@ async function scanDependencies(owner: string, repo: string, branch: string, tre
     });
   }
   // Worst first, and capped so a repo with dozens of stale deps stays readable.
-  return { findings: findings.sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity]).slice(0, 40), deps: list };
+  return {
+    findings: findings.sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity]).slice(0, 40),
+    deps: list,
+    depsTruncated,
+    usingRangeFloor,
+  };
 }
 
 /** Lint any Dockerfiles in the repo (only the subset that containerises has one). */
@@ -375,6 +395,9 @@ export async function POST(request: Request): Promise<Response> {
     dependencies: depResult.deps,
     rateLimit: lastRateLimit,
     unreadableFiles: unreadable,
+    filesSelected: paths.length,
+    depsTruncated: depResult.depsTruncated,
+    dependencyVersionsInferred: depResult.usingRangeFloor,
     grade,
     summary: tooManyFailed
       ? `GitHub would not serve ${unreadable} of ${paths.length} files, so this scan is incomplete — no grade. Try again in a few minutes.`

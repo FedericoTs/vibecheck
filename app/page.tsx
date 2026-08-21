@@ -160,6 +160,18 @@ function repoFix(f: RepoFinding): string {
       : 'Update this dependency to a patched version — `npm audit fix`, or bump it directly and reinstall. If nothing depends on it directly, it came in transitively: update the parent package or add an override.';
   }
   if (f.kind === 'secret') {
+    // The ungraded cases must not get the same instruction as a live leak.
+    // Ordering a history rewrite over a localhost password, or over a sample
+    // value in a rule file, is advice that costs real work and fixes nothing.
+    if (/^Local dev credentials/.test(f.label)) {
+      return 'Nothing to rotate — this points at localhost or a private address, so it is not reachable by anyone who is not already on that machine. Worth moving to a .env file that is gitignored anyway, so the day it becomes a real host it is not already committed.';
+    }
+    if (/^Sample value in a pattern file/.test(f.label)) {
+      return 'This looks like a deliberate sample in a rule or pattern file, so it is reported for completeness rather than as a leak. Confirm it is a placeholder and no action is needed.';
+    }
+    if (/in a comment \(/.test(f.label)) {
+      return 'This is on a commented-out line, so nothing reads it at runtime — but it is still in your git history and on every clone. If the value was ever real, ROTATE it, then delete the line.';
+    }
     return 'This is committed to the repo, so treat it as compromised: ROTATE the key, then load it from an environment variable instead of source. Remove it from the working tree (git rm --cached), add the file to .gitignore, and if it is sensitive, rewrite history so it is not recoverable from old commits.';
   }
   return "Scope the query to the caller's organisation, not just the id — e.g. add `.eq('organization_id', user.organization_id)` (or your tenant column). Then install tenant-guard so CI fails whenever a route filters by a bare id without scoping to a tenant.";
@@ -257,8 +269,28 @@ function RepoReport({ result, onReset }: { result: RepoScanResult; onReset: () =
         </div>
       ) : (
         <p className="mt-4 font-mono text-xs text-muted">
-          <span className="text-safe">✓</span> {result.filesScanned} source file(s) scanned, nothing found. Tests, fixtures and examples are skipped.
+          <span className="text-safe">✓</span> {result.filesScanned}
+          {result.filesSelected ? ` of ${result.filesSelected}` : ''} source file(s) scanned, nothing found. Tests,
+          fixtures and examples are skipped.
         </p>
+      )}
+
+      {/* What this scan did NOT cover. "Nothing found" is only as good as the
+          coverage behind it, and the numbers above are a numerator. */}
+      {(result.depsTruncated || result.dependencyVersionsInferred || (result.unreadableFiles ?? 0) > 0) && !incomplete && (
+        <div className="mt-4 border border-line bg-panel p-4 font-mono text-xs leading-relaxed text-faint">
+          <span className="text-muted">What this did not cover: </span>
+          {[
+            (result.unreadableFiles ?? 0) > 0 ? `${result.unreadableFiles} file(s) GitHub would not serve` : null,
+            result.depsTruncated ? `${result.depsTruncated} dependencies beyond the 500 we query` : null,
+            result.dependencyVersionsInferred
+              ? 'no lockfile parsed, so dependency versions come from your package.json ranges rather than what you install'
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+          . It reads the default branch as it is now — not your git history.
+        </div>
       )}
 
       <div className="mt-6 border border-line bg-panel p-5">
