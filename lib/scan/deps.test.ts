@@ -1,17 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  parseNpmLock,
-  cleanVersion,
-  parsePackageJson,
-  parseRequirementsTxt,
-  osvBatchBody,
-  parseOsvBatch,
-  cvssScore,
-  isMalware,
-  classifyVuln,
-  type Dep,
-  type OsvVuln,
-} from './deps';
+import { parseNpmLock, cleanVersion, parsePackageJson, parseRequirementsTxt, osvBatchBody, parseOsvBatch, cvssScore, isMalware, classifyVuln, type Dep, type OsvVuln } from './deps';
 
 describe('parseNpmLock', () => {
   it('reads exact versions from a v3 lockfile (packages), skips the root', () => {
@@ -113,5 +101,32 @@ describe('vuln classification', () => {
     expect(classifyVuln({ id: 'G', severity: [{ score: '7.5' }] }).severity).toBe('high');
     expect(classifyVuln({ id: 'G', database_specific: { severity: 'HIGH' } }).severity).toBe('high');
     expect(classifyVuln({ id: 'G', summary: 'minor' }).severity).toBe('medium');
+  });
+});
+
+describe('isMalware — "MALICIOUS" is the most damaging word we can print', () => {
+  it('does NOT brand a healthy package because its prose says "malicious user"', () => {
+    // The previous test searched `details` too, so an ordinary XSS advisory
+    // branded postcss as malicious.
+    expect(isMalware({
+      id: 'GHSA-7fh5-64p2-3v2j',
+      summary: 'PostCSS line return parsing error',
+      details: 'An attacker may craft input so that a malicious user could inject CSS.',
+    })).toBe(false);
+    expect(isMalware({
+      id: 'GHSA-566m-qj78-rww5',
+      summary: 'Regular Expression Denial of Service in postcss',
+      details: 'A malicious actor could exploit this ReDoS with a crafted stylesheet.',
+    })).toBe(false);
+  });
+
+  it('still flags the real supply-chain compromises, which predate MAL- ids', () => {
+    expect(isMalware({ id: 'MAL-2025-1234', summary: 'anything' })).toBe(true);
+    expect(isMalware({ id: 'GHSA-xxxx', aliases: ['MAL-2025-9'], summary: 'x' })).toBe(true);
+    expect(isMalware({ id: 'GHSA-x', summary: 'x', database_specific: { malicious: true } })).toBe(true);
+    // eslint-scope and ua-parser-js are titled this way and carry no MAL- id.
+    expect(isMalware({ id: 'GHSA-hxxf-q3w9-4xgw', summary: 'Malicious code in eslint-scope' })).toBe(true);
+    expect(isMalware({ id: 'GHSA-pjwm-rvh2-c87w', summary: 'Embedded malware in ua-parser-js' })).toBe(true);
+    expect(isMalware({ id: 'GHSA-y', summary: 'Backdoored release of foo' })).toBe(true);
   });
 });

@@ -116,8 +116,9 @@ export interface OsvVuln {
   id: string;
   summary?: string;
   details?: string;
+  aliases?: string[];
   severity?: Array<{ type?: string; score?: string }>;
-  database_specific?: { severity?: string };
+  database_specific?: { severity?: string; malicious?: boolean };
 }
 
 export type DepSeverity = 'critical' | 'high' | 'medium';
@@ -134,9 +135,29 @@ export function cvssScore(severity: OsvVuln['severity']): number | null {
   return best;
 }
 
-/** Malicious-package advisory? OSV publishes these as MAL-… or marks them explicitly. */
+/**
+ * Malicious-package advisory? OSV publishes these as MAL-… or marks them.
+ *
+ * "MALICIOUS" is the single most damaging word this tool can print about
+ * someone's dependency, so it has to be earned. The previous test searched
+ * `details` as well as `summary`, and ordinary advisory prose says things like
+ * "a malicious user could…" — which branded a perfectly healthy postcss as
+ * malicious purely for describing an XSS.
+ *
+ * The lexical test is kept but restricted to `summary` and anchored to the way
+ * malware advisories are actually titled. Deleting it entirely was tempting and
+ * wrong: the most famous npm supply-chain compromises predate the MAL- id
+ * scheme (eslint-scope is GHSA-hxxf-q3w9-4xgw, ua-parser-js is
+ * GHSA-pjwm-rvh2-c87w), so an id-only test would miss them.
+ *
+ * Validated against real advisories: postcss XSS → clean, postcss ReDoS →
+ * clean, eslint-scope → flagged, ua-parser-js → flagged.
+ */
 export function isMalware(v: OsvVuln): boolean {
-  return /^MAL-/i.test(v.id) || /malicious code|\bmalware\b|backdoor|crypto ?miner|exfiltrat/i.test(`${v.summary ?? ''} ${v.details ?? ''}`);
+  if (/^MAL-/i.test(v.id)) return true;
+  if (v.aliases?.some((a) => /^MAL-/i.test(a))) return true;
+  if (v.database_specific?.malicious === true) return true;
+  return /^malicious\b|\bmalicious (code|package)\b|\bembedded malware\b|\bbackdoor(ed)?\b/i.test(v.summary ?? '');
 }
 
 export function classifyVuln(v: OsvVuln): { id: string; summary: string; severity: DepSeverity; malware: boolean } {
