@@ -91,7 +91,23 @@ export function isApiRouteFile(path: string): boolean {
 const AUTH_SIGNAL = /withApiAuth|requireAuth|getServerSession|auth\.getUser|supabase\.auth|getUser\s*\(|currentUser\s*\(|verifyAuth|getSession\s*\(/i;
 const BARE_ID_FILTER =
   /\.eq\(\s*['"`]id['"`]|\.match\(\s*\{\s*id\b|where:\s*\{\s*id\b|eq\(\s*\w+\.id\s*,|findUnique\(\s*\{\s*where:\s*\{\s*id\b|\bWHERE\s+id\s*=/i;
-const TENANT_COLUMN = /organization_?id|organizationId|tenant_?id|tenantId|account_?id|workspace_?id|org_?id/i;
+/**
+ * Columns and expressions that mean "this row belongs to the caller".
+ *
+ * The original list held only multi-tenant column names — organization_id,
+ * tenant_id, workspace_id and friends — and omitted `user_id`. That is THE
+ * ownership column in a single-tenant Supabase or Next.js app, which is most of
+ * this tool's audience, so correctly-scoped routes matched the conjunction and
+ * were reported for a cross-tenant flaw they do not have.
+ *
+ * Verified against two real repos before widening: shadcn-ui/taxonomy was graded
+ * F on two routes that both perform textbook authorization (one calls an
+ * ownership helper, the other returns 403 unless the id is the session user),
+ * and awahids/monli was graded F on fourteen routes that every one chain
+ * `.eq('user_id', user.id)` directly.
+ */
+const TENANT_COLUMN =
+  /organization_?id|organizationId|tenant_?id|tenantId|account_?id|workspace_?id|org_?id|user_?id|userId|owner_?id|ownerId|author_?id|authorId|created_?by|team_?id|member_?id|profile_?id|customer_?id|auth\.uid\(\)|session\.user\.id|currentUser\.id|token\.sub|claims\.sub/i;
 
 export interface ScopingFinding {
   path: string;
@@ -108,10 +124,27 @@ export function detectCrossTenant(path: string, content: string): ScopingFinding
     return {
       path,
       detail:
-        'authenticated, and filters a query by a bare id without scoping it to the caller’s organisation — any signed-in user may be able to read another tenant’s rows',
+        'this route authenticates, then filters by a bare id. We could not see an ownership or tenant column in the same file — worth confirming the row belongs to the caller. If the check lives in a helper, or the id is the session user’s own, this is already correct.',
     };
   }
   return null;
+}
+
+/**
+ * Files whose PURPOSE is to hold sample credentials: secret-scanner rule sets,
+ * regex catalogues, detection corpora.
+ *
+ * They necessarily contain real-shaped keys — that is the product. Scanning
+ * gitleaks graded it F on its own annotated false-positive corpus, values
+ * carrying a literal `// gitleaks:allow`, and pyWhat F on the "Examples":
+ * {"Valid": [...]} arrays in its pattern database. A path denylist does not
+ * catch either (pyWhat's lives in `Data/`), so the gate is on CONTENT.
+ */
+const PATTERN_CATALOG =
+  /regexp\.MustCompile|new RegExp\(|re\.compile\(|config\.Rule\{|"Regex"\s*:|"Examples"\s*:|gitleaks:allow/;
+
+export function looksLikePatternCatalog(content: string): boolean {
+  return PATTERN_CATALOG.test(content);
 }
 
 // ── the scan ─────────────────────────────────────────────────────────
@@ -124,6 +157,13 @@ export interface RepoFinding {
   label: string;
   severity: 'critical' | 'high' | 'medium';
   detail: string;
+  /**
+   * False when the finding is shown but must NOT move the grade — the
+   * crawler-matrix precedent, applied here. Used where a legitimate
+   * explanation exists that we cannot rule out from the outside, so an
+   * accusation would be unearned.
+   */
+  graded?: boolean;
 }
 
 export interface RepoScanResult {
@@ -156,26 +196,56 @@ export function analyzeRepoFiles(files: Array<{ path: string; content: string }>
       if (seen.has(key)) continue;
       seen.add(key);
       const committedEnv = /(^|\/)\.env/i.test(path);
+      // Two cases that look identical to a regex but are not leaks: a
+      // connection string pointing somewhere unroutable, and a file whose whole
+      // job is to hold sample credentials. Both are reported, neither is graded.
+      const inCatalog = looksLikePatternCatalog(content);
+      const ungraded = s.local === true || inCatalog;
       findings.push({
         kind: 'secret',
         path,
-        label: committedEnv ? `${s.label} committed in ${path.split('/').pop()}` : `${s.label} in source (${path})`,
-        severity: 'critical',
-        detail: s.redacted,
+        label: s.local
+          ? `Local dev credentials (${path})`
+          : inCatalog
+            ? `Sample value in a pattern file (${path})`
+            : committedEnv
+              ? `${s.label} committed in ${path.split('/').pop()}`
+              : `${s.label} in source (${path})`,
+        severity: ungraded ? 'medium' : 'critical',
+        detail: s.local
+          ? `${s.redacted} — points at a local or private host, so it is not reachable from the internet. Reported, not graded.`
+          : inCatalog
+            ? `${s.redacted} — this file looks like a pattern or rule catalogue, where sample keys are the point. Reported, not graded.`
+            : s.redacted,
+        ...(ungraded ? { graded: false } : {}),
       });
     }
     // cross-tenant IDOR
     const ct = detectCrossTenant(path, content);
     if (ct) {
-      findings.push({ kind: 'cross-tenant', path, label: `Possible cross-tenant access (${path})`, severity: 'high', detail: ct.detail });
+      findings.push({
+        kind: 'cross-tenant',
+        path,
+        label: `Worth reviewing: row scoping (${path})`,
+        severity: 'medium',
+        detail: ct.detail,
+        // Reported, never graded. Deciding this correctly needs to know whether
+        // the id came from the request and whether an ownership check runs
+        // anywhere in the handler — including inside a helper we never read.
+        // Until the detector is handler-scoped, an F here would accuse
+        // correctly-written code.
+        graded: false,
+      });
     }
   }
   return findings;
 }
 
 export function gradeRepo(findings: RepoFinding[]): RepoScanResult['grade'] {
-  const crit = findings.filter((f) => f.severity === 'critical').length;
-  const high = findings.filter((f) => f.severity === 'high').length;
+  // Only findings we are prepared to stand behind move the grade.
+  const graded = findings.filter((f) => f.graded !== false);
+  const crit = graded.filter((f) => f.severity === 'critical').length;
+  const high = graded.filter((f) => f.severity === 'high').length;
   if (crit > 0) return 'F';
   if (high >= 2) return 'F';
   if (high === 1) return 'D';

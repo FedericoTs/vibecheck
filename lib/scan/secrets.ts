@@ -19,6 +19,33 @@ export interface SecretFinding {
   label: string;
   severity: Severity;
   redacted: string;
+  /**
+   * True when a connection string points somewhere unreachable from the
+   * internet — localhost, a private range, a docker-compose service name.
+   * Those credentials are the framework default and are not readable by
+   * anyone who is not already on the box, so they are reported, never graded.
+   */
+  local?: boolean;
+}
+
+/**
+ * Hosts that are not reachable from the internet.
+ *
+ * Deliberately keyed on the HOST alone. A well-known credential pair is NOT a
+ * safe suppressor — `postgres://postgres:postgres@db.prod.example.com` is a
+ * genuine and serious leak, and filtering on the password would hide it.
+ * A bare single-label host (`db`, `postgres`, `mysql`) is a docker-compose
+ * service name, which is equally unreachable.
+ */
+const LOCAL_DB_HOST =
+  /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[?::1\]?|host\.docker\.internal|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[a-z0-9_-]+|.*\.(local|internal|test|localhost))$/i;
+
+/** Does this connection string point at a non-routable host? */
+export function isLocalDbUrl(match: string): boolean {
+  const at = match.lastIndexOf('@');
+  if (at === -1) return false;
+  const host = match.slice(at + 1).split(/[/:?]/)[0];
+  return LOCAL_DB_HOST.test(host);
 }
 
 export interface SecretsScanResult {
@@ -144,7 +171,7 @@ export function findSecrets(text: string): SecretFinding[] {
     const key = id + ':' + match;
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ id, label, severity, redacted: redact(match) });
+    out.push({ id, label, severity, redacted: redact(match), ...(id === 'db-url' && isLocalDbUrl(match) ? { local: true } : {}) });
   };
 
   for (const rule of RULES) {

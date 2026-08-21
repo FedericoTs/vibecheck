@@ -1,14 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  parseRepoUrl,
-  selectFiles,
-  isApiRouteFile,
-  detectCrossTenant,
-  analyzeRepoFiles,
-  gradeRepo,
-  isFixture,
-  type TreeEntry,
-} from './repo';
+import { parseRepoUrl, selectFiles, isApiRouteFile, detectCrossTenant, analyzeRepoFiles, gradeRepo, isFixture, type TreeEntry, looksLikePatternCatalog } from './repo';
 
 describe('parseRepoUrl', () => {
   it('accepts the common github URL shapes and shorthand', () => {
@@ -68,7 +59,9 @@ describe('detectCrossTenant — the tenant-guard shape (a CONJUNCTION)', () => {
         const order = await supabase.from('orders').select('*').eq('id', params.id).single();
         return Response.json(order);
       }`;
-    expect(detectCrossTenant(P, code)?.detail).toMatch(/another tenant/);
+    // Reported as an observation, not an accusation: we cannot see whether an
+    // ownership check lives in a helper we never read.
+    expect(detectCrossTenant(P, code)?.detail).toMatch(/worth confirming/i);
   });
 
   it('does NOT flag when the query IS scoped to the tenant', () => {
@@ -113,17 +106,22 @@ describe('analyzeRepoFiles + gradeRepo', () => {
     expect(gradeRepo(findings)).toBe('A');
   });
 
-  it('one cross-tenant route is a serious drop, two is F', () => {
+  it('cross-tenant routes are REPORTED but never graded', () => {
+    // They used to drive D/F. Verified against real repos, that rule graded
+    // correctly-authorized code — so the finding is shown and the grade is
+    // left alone until the detector is handler-scoped.
     const bad = `const {user}=await withApiAuth(req); supabase.from('x').select('*').eq('id', id)`;
-    expect(gradeRepo(analyzeRepoFiles([{ path: 'app/api/a/route.ts', content: bad }]))).toBe('D');
-    expect(
-      gradeRepo(
-        analyzeRepoFiles([
-          { path: 'app/api/a/route.ts', content: bad },
-          { path: 'app/api/b/route.ts', content: bad },
-        ]),
-      ),
-    ).toBe('F');
+    const one = analyzeRepoFiles([{ path: 'app/api/a/route.ts', content: bad }]);
+    expect(one).toHaveLength(1);
+    expect(one[0].graded).toBe(false);
+    expect(gradeRepo(one)).toBe('A');
+
+    const two = analyzeRepoFiles([
+      { path: 'app/api/a/route.ts', content: bad },
+      { path: 'app/api/b/route.ts', content: bad },
+    ]);
+    expect(two).toHaveLength(2);
+    expect(gradeRepo(two)).toBe('A');
   });
 });
 
@@ -151,5 +149,52 @@ describe('fixture exclusion — the false positive E2E caught', () => {
     expect(isFixture('.env.example')).toBe(true);
     expect(isFixture('src/app/api/route.ts')).toBe(false);
     expect(isFixture('.env')).toBe(false);
+  });
+});
+
+describe('REGRESSIONS from the repo-mode audit — real repos that were graded F', () => {
+  it('does not flag a route scoped by user_id (shadcn-ui/taxonomy, awahids/monli)', () => {
+    // user_id is THE ownership column in a single-tenant Supabase or Next.js
+    // app — this tool's core audience. Omitting it graded correctly-written
+    // routes F for an IDOR they do not have.
+    const route = `
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data } = await supabase.from('accounts').select().eq('id', params.id).eq('user_id', user.id);
+    `;
+    expect(detectCrossTenant('app/api/accounts/[id]/route.ts', route)).toBe(null);
+  });
+
+  it('accepts the other ownership vocabularies too', () => {
+    for (const col of ['authorId', 'owner_id', 'created_by', 'session.user.id', 'auth.uid()']) {
+      const src = `const s = await getServerSession(); db.post.findUnique({ where: { id: params.id } }); // ${col}`;
+      expect(detectCrossTenant('app/api/posts/[id]/route.ts', src)).toBe(null);
+    }
+  });
+
+  it('still reports the genuinely unscoped shape — but never grades on it', () => {
+    const bad = `const session = await getServerSession(); const row = await db.doc.findUnique({ where: { id: params.id } });`;
+    const ct = detectCrossTenant('app/api/doc/[id]/route.ts', bad);
+    expect(ct).not.toBe(null);
+    // Wording is an observation, not an accusation.
+    expect(ct!.detail).toMatch(/worth confirming/i);
+    expect(ct!.detail).not.toMatch(/may be able to read another/i);
+  });
+
+  it('an ungraded finding cannot drive the grade', () => {
+    const ungraded = [
+      { kind: 'cross-tenant' as const, path: 'a', label: 'x', severity: 'medium' as const, detail: '', graded: false },
+      { kind: 'secret' as const, path: 'b', label: 'y', severity: 'critical' as const, detail: '', graded: false },
+    ];
+    expect(gradeRepo(ungraded)).toBe('A');
+    // …while a real critical still does.
+    expect(gradeRepo([{ kind: 'secret', path: 'b', label: 'y', severity: 'critical', detail: '' }])).toBe('F');
+  });
+
+  it('recognises a pattern catalogue, so a scanner is not graded on its own corpus', () => {
+    // gitleaks was graded F on values annotated `// gitleaks:allow`; pyWhat on
+    // its "Examples": {"Valid": [...]} arrays.
+    expect(looksLikePatternCatalog('rules = append(rules, config.Rule{ Regex: regexp.MustCompile(`AKIA[0-9A-Z]{16}`) })')).toBe(true);
+    expect(looksLikePatternCatalog('{ "Name": "AWS", "Regex": "AKIA...", "Examples": { "Valid": ["AKIAIOSFODNN7EXAMPLE"] } }')).toBe(true);
+    expect(looksLikePatternCatalog('const key = process.env.STRIPE_SECRET_KEY;')).toBe(false);
   });
 });

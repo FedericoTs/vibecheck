@@ -75,3 +75,37 @@ describe('looksLikeDockerfile — the content gate', () => {
     expect(looksLikeDockerfile('This guide explains USER and RUN instructions.')).toBe(false);
   });
 });
+
+describe('multi-stage builds are not unpinned base images', () => {
+  const MULTISTAGE = `FROM node:20-alpine AS builder
+WORKDIR /app
+RUN npm ci
+FROM builder AS deps
+RUN npm prune --omit=dev
+FROM node:20-alpine
+COPY --from=builder /app /app
+USER node`;
+
+  it('does not flag a stage reference as an untagged image', () => {
+    // `FROM builder` is an earlier stage, and Docker resolves stage names in
+    // preference to registry images. Reading them as images failed every
+    // multi-stage Dockerfile — which is most real ones.
+    const pins = lintDockerfile(MULTISTAGE).filter((f) => f.label === 'Base image not pinned');
+    expect(pins).toHaveLength(0);
+  });
+
+  it('still catches a genuinely unpinned base image', () => {
+    expect(lintDockerfile('FROM node\nUSER node').some((f) => f.label === 'Base image not pinned')).toBe(true);
+    expect(lintDockerfile('FROM node:latest\nUSER node').some((f) => f.label === 'Base image not pinned')).toBe(true);
+  });
+
+  it('treats a build ARG as pinned-by-argument, not unpinned', () => {
+    const f = lintDockerfile('ARG NODE_VERSION=20\nFROM ${NODE_VERSION}\nUSER node');
+    expect(f.some((x) => x.label === 'Base image not pinned')).toBe(false);
+  });
+
+  it('ignores flags that precede the image name', () => {
+    const f = lintDockerfile('FROM --platform=linux/amd64 node:20-alpine AS b\nUSER node');
+    expect(f.some((x) => x.label === 'Base image not pinned')).toBe(false);
+  });
+});

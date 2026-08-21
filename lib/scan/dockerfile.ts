@@ -75,10 +75,29 @@ export function lintDockerfile(content: string): DockerFinding[] {
     });
   }
 
-  // Unpinned base image
-  for (const l of lines.filter((l) => /^FROM\s+/i.test(l))) {
-    const img = l.replace(/^FROM\s+/i, '').split(/\s+as\s+/i)[0].trim();
+  // Unpinned base image.
+  //
+  // In a multi-stage build, `FROM builder` refers to an earlier stage declared
+  // with `AS builder` — not a registry image — and Docker itself resolves a
+  // stage name in preference to an image. Reading those as untagged base images
+  // made every multi-stage Dockerfile fail this check, which is most real ones.
+  // So collect the stage names first and skip anything that resolves to one.
+  const fromLines = lines.filter((l) => /^FROM\s+/i.test(l));
+  const stageNames = new Set(
+    fromLines.map((l) => l.match(/\s+as\s+(\S+)/i)?.[1]?.toLowerCase()).filter((n): n is string => !!n),
+  );
+  for (const l of fromLines) {
+    const img = l
+      .replace(/^FROM\s+/i, '')
+      // Strip the flags that may precede the image (--platform=…, --from=…).
+      .replace(/^(--\S+\s+)+/i, '')
+      .split(/\s+as\s+/i)[0]
+      .trim();
     if (/^scratch$/i.test(img)) continue;
+    if (stageNames.has(img.toLowerCase())) continue; // an earlier stage, not an image
+    // `FROM ${NODE_VERSION}` is pinned by a build ARG we cannot resolve — not
+    // evidence of a missing tag.
+    if (/^\$\{?\w+\}?$/.test(img)) continue;
     if (/:latest$/i.test(img) || !/[:@]/.test(img)) {
       out.push({
         severity: 'medium',
