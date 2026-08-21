@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   discoverFirebase,
   extractCollections,
+  extractDatabases,
   isRtdbOpen,
   firestoreDocs,
   gradeFirebase,
@@ -137,5 +138,67 @@ describe('firebaseConfigFromText — manual paste (mobile apps)', () => {
 
   it('returns null when there is no project id to work with', () => {
     expect(firebaseConfigFromText('just some text')).toBe(null);
+  });
+});
+
+describe('named Firestore databases', () => {
+  it('finds the databases the bundle references, ignoring the default', () => {
+    expect(extractDatabases("const db = getFirestore(app, 'prod');")).toEqual(['prod']);
+    expect(extractDatabases('initializeFirestore(app, {}, "analytics-eu")')).toEqual(['analytics-eu']);
+    expect(extractDatabases("getFirestore(app, 'default')")).toEqual([]);
+    expect(extractDatabases('getFirestore(app)')).toEqual([]);
+  });
+
+  /**
+   * The false PASS this fixes: rules deploy per database, so a project locked
+   * down on "(default)" and wide open on "prod" used to render clean.
+   */
+  it('probes every named database, not just the default', async () => {
+    const seen: string[] = [];
+    const fetchy = async (url: string) => {
+      seen.push(url);
+      const open = url.includes('/databases/prod/');
+      return {
+        status: 200,
+        json: async () => (open ? { documents: [{ name: 'x' }] } : {}),
+      } as unknown as Response;
+    };
+    const r = await scanFirebase({
+      config: { projectId: 'app' },
+      collections: ['users'],
+      databases: ['prod'],
+      fetch: fetchy as never,
+    });
+    expect(r.databases).toEqual(['(default)', 'prod']);
+    expect(seen.some((u) => u.includes('/databases/(default)/'))).toBe(true);
+    expect(seen.some((u) => u.includes('/databases/prod/'))).toBe(true);
+    // The locked default must not mask the open named database.
+    expect(r.exposedCount).toBe(1);
+    expect(r.collections.find((c) => c.exposed)?.database).toBe('prod');
+  });
+
+  it('carries a probe URL on an exposed collection, and never on a locked one', async () => {
+    const fetchy = async (url: string) =>
+      ({ status: 200, json: async () => (url.includes('users') ? { documents: [{ name: 'x' }] } : {}) }) as unknown as Response;
+    const r = await scanFirebase({
+      config: { projectId: 'app', apiKey: 'AIza-secret-value' },
+      collections: ['users', 'locked'],
+      fetch: fetchy as never,
+    });
+    const exposed = r.collections.find((c) => c.collection === 'users')!;
+    const locked = r.collections.find((c) => c.collection === 'locked')!;
+    expect(exposed.probeUrl).toContain('/databases/(default)/documents/users');
+    expect(locked.probeUrl).toBeUndefined();
+    // The user's key must never be baked into anything we render.
+    expect(exposed.probeUrl).not.toContain('AIza-secret-value');
+  });
+
+  it('marks collection names as guessed when the bundle names none', async () => {
+    const fetchy = async () => ({ status: 403, json: async () => ({}) }) as unknown as Response;
+    const guessed = await scanFirebase({ config: { projectId: 'app' }, fetch: fetchy as never });
+    expect(guessed.collectionsGuessed).toBe(true);
+
+    const known = await scanFirebase({ config: { projectId: 'app' }, collections: ['orders'], fetch: fetchy as never });
+    expect(known.collectionsGuessed).toBe(false);
   });
 });

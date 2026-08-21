@@ -132,6 +132,22 @@ export function sourceMapEvidence(url: string): CheckEvidence | null {
 }
 
 /**
+ * A readable Firestore collection.
+ *
+ * The web API key is public by design, but it is still the user's value, so it
+ * is a placeholder here for the same reason the Supabase anon key is. The URL
+ * already carries `?pageSize=1`, so the key appends cleanly.
+ */
+export function firestoreEvidence(probeUrl: string): CheckEvidence | null {
+  const quoted = shellQuote(`${probeUrl}&key=<your web api key>`);
+  if (!quoted) return null;
+  return {
+    label: 'Run this yourself — documents come back with no login',
+    command: `curl -s ${quoted}`,
+  };
+}
+
+/**
  * The database probe. The anon key is the user's own publishable key and travels
  * as a header, but it is still THEIR value, so the command carries a
  * placeholder — the same rule the proof headline follows.

@@ -6,6 +6,7 @@ import { scriptUrls, fetchScript as fetchText, MAX_BYTES } from '@/lib/scan/bund
 import { findSecrets, gradeSecrets, countPublicGoogleKeys, type SecretFinding } from '@/lib/scan/secrets';
 import { scanSourceMaps } from '@/lib/scan/sourcemap';
 import { discoverSupabase } from '@/lib/scan/discover';
+import { extractDatabases } from '@/lib/scan/firebase';
 import { discoverFirebase, extractCollections } from '@/lib/scan/firebase';
 import { scanLibraries } from '@/lib/scan/libs';
 
@@ -76,6 +77,8 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
   const firebaseCollections = firebase ? extractCollections(allCode) : [];
+  // Rules deploy per database, so a named one must be probed too.
+  const firebaseDatabases = firebase ? extractDatabases(allCode) : [];
 
   // Are the source maps published? A .js.map republishes the original source —
   // comments, unminified logic, and secrets that minification hid. We both flag
@@ -122,5 +125,6 @@ export async function POST(request: Request): Promise<Response> {
     discovered,
     firebase,
     firebaseCollections,
+    firebaseDatabases,
   });
 }

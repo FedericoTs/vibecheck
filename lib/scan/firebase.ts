@@ -21,8 +21,16 @@ export interface FirebaseConfig {
 
 export interface FirebaseCollectionFinding {
   collection: string;
+  /** Which Firestore database this was read from. Rules deploy PER DATABASE. */
+  database: string;
   exposed: boolean;
   docsVisible: number | null;
+  /**
+   * The request that proved it, without the web API key — that key is public by
+   * design, but it is still the user's value, so it stays a placeholder in
+   * anything we render. Same rule the Supabase probe follows.
+   */
+  probeUrl?: string;
 }
 
 export interface FirebaseScanResult {
@@ -32,6 +40,15 @@ export interface FirebaseScanResult {
   rtdbOpen: boolean;
   rtdbChecked: boolean;
   collections: FirebaseCollectionFinding[];
+  /** Every Firestore database we probed, not just "(default)". */
+  databases: string[];
+  /**
+   * True when the collection names were GUESSED rather than read from the app's
+   * own bundle. A clean sweep over ten guesses is not evidence of a locked-down
+   * project — it is evidence that we guessed wrong — so it must never render as
+   * a pass. Unknown is a first-class outcome.
+   */
+  collectionsGuessed: boolean;
   exposedCount: number;
   grade: Grade;
   summary: string;
@@ -87,6 +104,23 @@ export function extractCollections(text: string): string[] {
   return [...out];
 }
 
+/**
+ * Named Firestore databases the app references.
+ *
+ * Security rules are deployed PER DATABASE. A project can be correctly locked
+ * down on "(default)" and wide open on "prod", and probing only the default —
+ * which is all this scanner used to do — renders that project clean. That is a
+ * false pass on the most serious check we run.
+ */
+export function extractDatabases(text: string): string[] {
+  const out = new Set<string>();
+  // getFirestore(app, 'name') and initializeFirestore(app, {...}, 'name')
+  for (const m of text.matchAll(/\b(?:get|initialize)Firestore\s*\([^)]*?["'`]([A-Za-z0-9][\w-]{0,62})["'`]\s*\)/g)) {
+    if (m[1] !== 'default') out.add(m[1]);
+  }
+  return [...out];
+}
+
 /** Collections worth trying when the bundle names none. */
 export const COMMON_COLLECTIONS = [
   'users', 'posts', 'messages', 'orders', 'products',
@@ -136,13 +170,19 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R
 export interface FirebaseScanOpts {
   config: FirebaseConfig;
   collections?: string[];
+  /** Named databases beyond "(default)", from extractDatabases(). */
+  databases?: string[];
   fetch?: Fetchy;
 }
 
 export async function scanFirebase(opts: FirebaseScanOpts): Promise<FirebaseScanResult> {
   const fetchy = opts.fetch ?? (globalThis.fetch as Fetchy);
   const { projectId, apiKey } = opts.config;
-  const names = (opts.collections?.length ? opts.collections : COMMON_COLLECTIONS).slice(0, 12);
+  const named = opts.collections?.length ? opts.collections : [];
+  const collectionsGuessed = named.length === 0;
+  const names = (collectionsGuessed ? COMMON_COLLECTIONS : named).slice(0, 12);
+  // Always probe "(default)"; add any named database the bundle referenced.
+  const databases = ['(default)', ...(opts.databases ?? []).filter((d) => d && d !== '(default)')].slice(0, 4);
 
   // 1) Realtime Database: is the root world-readable?
   let rtdbOpen = false;
@@ -167,12 +207,16 @@ export async function scanFirebase(opts: FirebaseScanOpts): Promise<FirebaseScan
   }
 
   // 2) Firestore: can anyone list documents in the app's collections?
-  const collections = await mapLimit(names, 5, async (collection): Promise<FirebaseCollectionFinding> => {
+  const targets = databases.flatMap((database) => names.map((collection) => ({ database, collection })));
+  const collections = await mapLimit(targets, 5, async ({ database, collection }): Promise<FirebaseCollectionFinding> => {
     const q = new URLSearchParams({ pageSize: '1' });
     if (apiKey) q.set('key', apiKey);
-    const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/${encodeURIComponent(collection)}?${q}`;
+    const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/${encodeURIComponent(database)}/documents/${encodeURIComponent(collection)}`;
+    // Kept separately from the request URL so the rendered command never
+    // carries the user's key, only a placeholder.
+    const probeUrl = `${base}?pageSize=1`;
     try {
-      const res = await fetchy(url);
+      const res = await fetchy(`${base}?${q}`);
       let body: unknown = null;
       try {
         body = await res.json();
@@ -180,9 +224,10 @@ export async function scanFirebase(opts: FirebaseScanOpts): Promise<FirebaseScan
         /* non-JSON */
       }
       const n = firestoreDocs(res.status, body);
-      return { collection, exposed: (n ?? 0) > 0, docsVisible: n };
+      const exposed = (n ?? 0) > 0;
+      return { collection, database, exposed, docsVisible: n, ...(exposed ? { probeUrl } : {}) };
     } catch {
-      return { collection, exposed: false, docsVisible: null };
+      return { collection, database, exposed: false, docsVisible: null };
     }
   });
 
@@ -195,6 +240,8 @@ export async function scanFirebase(opts: FirebaseScanOpts): Promise<FirebaseScan
     rtdbOpen,
     rtdbChecked,
     collections,
+    databases,
+    collectionsGuessed,
     exposedCount,
     grade,
     summary: rtdbOpen

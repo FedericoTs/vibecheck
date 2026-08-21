@@ -1,7 +1,7 @@
 import type { SupabaseScanResult, Grade } from './types';
 import type { HeadersScanResult } from './headers';
 import type { PathsScanResult } from './paths';
-import { fileEvidence, routeEvidence, headerEvidence, dnsEvidence, sourceMapEvidence, tableEvidence, type CheckEvidence } from './evidence';
+import { fileEvidence, routeEvidence, headerEvidence, dnsEvidence, sourceMapEvidence, tableEvidence, firestoreEvidence, type CheckEvidence } from './evidence';
 import { isGradedSecret, isHardSecret } from './secrets';
 import type { SecretsScanResult } from './secrets';
 import type { FundamentalsResult } from './fundamentals';
@@ -223,12 +223,38 @@ export function combineReport(inp: ReportInputs): Report {
         severity: 'critical',
       });
     }
+    // Name the database whenever it is not the default one, because rules are
+    // deployed per database and "users" means nothing without knowing which.
+    const where = (c: { collection: string; database: string }) =>
+      c.database && c.database !== '(default)' ? `${c.collection} (Firestore: ${c.database})` : `${c.collection} (Firestore)`;
+
     for (const c of f.collections) {
+      // A collection name we GUESSED that returned nothing is not evidence of a
+      // locked-down project — it is evidence that we guessed wrong. Those are
+      // collapsed into one honest "unknown" row below rather than printed as
+      // ten green ticks, which is unearned reassurance.
+      if (f.collectionsGuessed && !c.exposed) continue;
       checks.push({
-        label: `${c.collection} (Firestore)`,
+        label: where(c),
         pass: !c.exposed,
         detail: c.exposed ? 'documents readable by anyone' : 'not readable by anonymous visitors',
         severity: 'critical',
+        evidence: c.exposed && c.probeUrl ? ev(firestoreEvidence(c.probeUrl)) : undefined,
+      });
+    }
+
+    if (f.collectionsGuessed) {
+      const tried = new Set(f.collections.map((c) => c.collection)).size;
+      const found = f.collections.filter((c) => c.exposed).length;
+      checks.push({
+        label: 'Firestore collections could not be enumerated',
+        pass: false,
+        graded: false,
+        severity: 'low',
+        detail:
+          `your bundle does not name any collections, so we tried ${tried} common name${tried === 1 ? '' : 's'}` +
+          (found > 0 ? ` and ${found} came back readable` : ' and none came back') +
+          `. Firestore has no public listing API, so this says nothing about collections we did not guess.`,
       });
     }
     categories.push({ key: 'firebase', group: 'security', label: 'Firebase exposure', grade: f.grade, summary: f.summary, checks });

@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { track } from '@vercel/analytics';
 import { scanSupabase } from '@/lib/scan/supabase';
-import { scanFirebase, extractCollections, firebaseConfigFromText, type FirebaseConfig } from '@/lib/scan/firebase';
+import { scanFirebase, extractCollections, extractDatabases, firebaseConfigFromText, type FirebaseConfig } from '@/lib/scan/firebase';
 import { unzipSync } from 'fflate';
 import { extractScannableText, analyzeBinaryText } from '@/lib/scan/binary';
 import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
@@ -632,6 +632,7 @@ export default function Home() {
             discovered?: { url: string; anonKey: string } | null;
             firebase?: FirebaseConfig | null;
             firebaseCollections?: string[];
+            firebaseDatabases?: string[];
             libraries?: LibsScanResult | null;
           }
         >('/api/scan/secrets', 'secrets')
@@ -672,7 +673,7 @@ export default function Home() {
       const [sb, fb] = await Promise.all([
         creds ? scanSupabase(creds) : Promise.resolve(null),
         secrets?.firebase
-          ? scanFirebase({ config: secrets.firebase, collections: secrets.firebaseCollections }).catch(() => null)
+          ? scanFirebase({ config: secrets.firebase, collections: secrets.firebaseCollections, databases: secrets.firebaseDatabases }).catch(() => null)
           : Promise.resolve(null),
       ]);
       if (secrets?.firebase) setAutoDetected(true);
@@ -798,7 +799,7 @@ export default function Home() {
       const { secrets, discovered, firebase } = analyzeBinaryText(text);
       const [sb, fb] = await Promise.all([
         discovered ? scanSupabase(discovered).catch(() => null) : Promise.resolve(null),
-        firebase ? scanFirebase({ config: firebase, collections: extractCollections(text) }).catch(() => null) : Promise.resolve(null),
+        firebase ? scanFirebase({ config: firebase, collections: extractCollections(text), databases: extractDatabases(text) }).catch(() => null) : Promise.resolve(null),
       ]);
       if (discovered || firebase) setAutoDetected(true);
       setInputs({ supabase: sb, firebase: fb, secrets: gradeSecrets(secrets, 'your app') });
@@ -829,7 +830,7 @@ export default function Home() {
       // and still run in the browser.
       const [sb, firebase] = await Promise.all([
         hasSupa ? scanSupabase({ url: sbUrl, anonKey }) : Promise.resolve(null),
-        fb ? scanFirebase({ config: fb, collections: extractCollections(fbConfig) }).catch(() => null) : Promise.resolve(null),
+        fb ? scanFirebase({ config: fb, collections: extractCollections(fbConfig), databases: extractDatabases(fbConfig) }).catch(() => null) : Promise.resolve(null),
       ]);
       // A report is only meaningful if at least one probe actually ran. An
       // errored Supabase alone (e.g. a rotated key) would otherwise render a
