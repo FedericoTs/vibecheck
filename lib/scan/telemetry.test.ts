@@ -3,6 +3,7 @@ import {
   anonymityViolations,
   buildRepoOutcome,
   buildScanOutcome,
+  nextCountState,
   sanitizeOutcome,
   type Outcome,
 } from './telemetry';
@@ -120,6 +121,38 @@ describe('anonymity guarantee', () => {
 
   it('drops NaN, which JSON would silently turn into null', () => {
     expect(sanitizeOutcome({ issues: NaN, passed: 4 })).toEqual({ passed: 4 });
+  });
+});
+
+describe('one event per scan', () => {
+  /** Replay a sequence of "is there a report right now?" and collect when we would emit. */
+  function replay(hasReport: boolean[]): number[] {
+    const fired: number[] = [];
+    let counted = false;
+    hasReport.forEach((present, i) => {
+      const next = nextCountState(present, counted);
+      counted = next.counted;
+      if (next.emit) fired.push(i);
+    });
+    return fired;
+  }
+
+  it('counts once when the late Lighthouse result rebuilds the report', () => {
+    // null (scan starts) → report(56 checks) → report(60 checks, Lighthouse landed)
+    expect(replay([false, true, true])).toEqual([1]);
+  });
+
+  it('still counts the next scan', () => {
+    // scan → result → rebuild → new scan clears it → result
+    expect(replay([false, true, true, false, true])).toEqual([1, 4]);
+  });
+
+  it('counts nothing when a scan never produces a report', () => {
+    expect(replay([false, false, false])).toEqual([]);
+  });
+
+  it('survives repeated rebuilds without ever double counting', () => {
+    expect(replay([false, true, true, true, true, true])).toEqual([1]);
   });
 });
 

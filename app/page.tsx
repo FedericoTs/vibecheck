@@ -8,7 +8,7 @@ import { scanFirebase, extractCollections, firebaseConfigFromText, type Firebase
 import { unzipSync } from 'fflate';
 import { extractScannableText, analyzeBinaryText } from '@/lib/scan/binary';
 import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
-import { buildScanOutcome, buildRepoOutcome } from '@/lib/scan/telemetry';
+import { buildScanOutcome, buildRepoOutcome, nextCountState } from '@/lib/scan/telemetry';
 import { buildFixPrompt, buildRepoFixPrompt, fixFor } from '@/lib/scan/fixes';
 import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals, CrawlerMatrix } from '@/components/report-visuals';
 import type { HeadersScanResult } from '@/lib/scan/headers';
@@ -522,23 +522,16 @@ export default function Home() {
   // or a row count, so "we never see your app" stays literally true. The rule is
   // enforced in lib/scan/telemetry.ts, not merely observed here.
   //
-  // EXACTLY ONE event per scan. `report` is a useMemo over `inputs`, and `inputs`
-  // is written a second time when the Lighthouse result lands late — so keying on
-  // the report object counted a scan twice whenever Lighthouse succeeded, which
-  // would inflate the denominator AND bias it toward sites Lighthouse can reach.
-  // Instead we arm on report === null, which every scan start already does by
-  // calling setInputs(null), and disarm on the first report that follows.
+  // Exactly one event per scan — the arm/fire rule lives in nextCountState() so
+  // it is unit-tested rather than eyeballed. See the note there for why keying on
+  // the report object double-counted, and why that skewed the aggregate low.
   const lastMode = useRef<'url' | 'backend' | 'mobile'>('url');
   const countedReport = useRef(false);
   const countedRepo = useRef<RepoScanResult | null>(null);
   useEffect(() => {
-    if (!report) {
-      countedReport.current = false; // a scan is starting; arm for the next result
-      return;
-    }
-    if (countedReport.current) return;
-    countedReport.current = true;
-    track('scan_completed', buildScanOutcome(lastMode.current, report, inputs));
+    const { counted, emit } = nextCountState(Boolean(report), countedReport.current);
+    countedReport.current = counted;
+    if (emit && report) track('scan_completed', buildScanOutcome(lastMode.current, report, inputs));
   }, [report, inputs]);
   useEffect(() => {
     if (!repoResult || countedRepo.current === repoResult) return;

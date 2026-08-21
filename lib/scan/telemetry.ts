@@ -89,6 +89,27 @@ export function sanitizeOutcome(outcome: Outcome): Outcome {
 }
 
 /**
+ * One event per scan, as a state machine so it can be proved rather than
+ * eyeballed.
+ *
+ * The report is derived from the scan inputs, and the inputs are written a
+ * SECOND time when the Lighthouse result lands late — so "have I counted this
+ * report object yet?" counts the same scan twice. That is worse than a
+ * duplicate: only scans where Lighthouse succeeded would double, biasing the
+ * denominator toward reachable, well-behaved sites — the population least
+ * likely to be leaking — so the published percentage would skew low.
+ *
+ * Instead: arm when the report clears (every scan start does this), and fire on
+ * the first report that follows. Live production could not reproduce the late
+ * Lighthouse arrival on demand, which is exactly why this is a unit test.
+ */
+export function nextCountState(hasReport: boolean, counted: boolean): { counted: boolean; emit: boolean } {
+  if (!hasReport) return { counted: false, emit: false }; // scan starting — arm
+  if (counted) return { counted: true, emit: false }; // a rebuild of a scan already counted
+  return { counted: true, emit: true };
+}
+
+/**
  * The outcome of a public-URL scan, as counts and booleans.
  *
  * `dbProbed` is the denominator that makes the headline claim honest: an app
