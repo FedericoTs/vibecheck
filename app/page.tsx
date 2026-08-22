@@ -11,6 +11,7 @@ import { combineReport, type ReportInputs, type ReportCategory, type CheckItem }
 import type { CheckEvidence } from '@/lib/scan/evidence';
 import { buildScanOutcome, buildRepoOutcome, nextCountState } from '@/lib/scan/telemetry';
 import { CATALOGUE_CLAIM } from '@/lib/scan/catalogue';
+import { categoryBlurb } from '@/lib/scan/category-info';
 import { buildFixPrompt, buildRepoFixPrompt, fixFor } from '@/lib/scan/fixes';
 import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals, CrawlerMatrix } from '@/components/report-visuals';
 import type { HeadersScanResult } from '@/lib/scan/headers';
@@ -123,9 +124,16 @@ function CategoryCard({ c }: { c: ReportCategory }) {
 
   return (
     <div className={`border bg-panel ${failures.length > 0 ? 'border-danger/30' : 'border-line'}`}>
-      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <p className="font-mono text-xs font-medium uppercase tracking-wider text-ink">{c.label}</p>
-        <span className={`border px-2 py-0.5 font-mono text-xs ${tone(c.grade)}`}>{c.grade ?? '—'}</span>
+      <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-2.5">
+        <div className="min-w-0">
+          <p className="font-mono text-xs font-medium uppercase tracking-wider text-ink">{c.label}</p>
+          {/* Without this the report is a grade and a column of ticks, which
+              tells someone whether to feel good but not what was examined. */}
+          {categoryBlurb(c.key) && (
+            <p className="mt-1 text-xs leading-relaxed text-faint">{categoryBlurb(c.key)}</p>
+          )}
+        </div>
+        <span className={`shrink-0 border px-2 py-0.5 font-mono text-xs ${tone(c.grade)}`}>{c.grade ?? '—'}</span>
       </div>
 
       {c.checks.length === 0 ? (
@@ -1171,6 +1179,19 @@ export default function Home() {
             the headline and the grade moves below it.
           */}
           {proof && <ProofHeadline proof={proof} />}
+
+          {/* Performance/SEO arrive up to half a minute after everything else,
+              and a reader who does not know that reads the report as finished
+              and leaves before it lands. */}
+          {lhLoading && (
+            <div className="mt-4 flex items-center gap-2.5 border border-line bg-panel px-4 py-2.5">
+              <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-warn" />
+              <p className="font-mono text-xs text-muted">
+                Security results are below. Performance, SEO &amp; accessibility are still running{' '}
+                <span className="text-faint">— Google&rsquo;s audit takes 10–30s</span>
+              </p>
+            </div>
+          )}
 
           {/* the grade — the headline when there is nothing proven to show */}
           <div className={`${proof ? 'mt-4 ' : ''}border bg-panel ${report.issueCount > 0 ? 'border-danger/40' : 'border-safe/40'}`}>
