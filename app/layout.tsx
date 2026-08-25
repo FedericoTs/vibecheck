@@ -22,7 +22,7 @@ const mono = JetBrains_Mono({
 // @/lib/site-url, shared with robots.ts and sitemap.ts.
 
 const description =
-  "A free, open-source security report card for AI-built apps. See exactly what a stranger can read from your Supabase project and how your app is configured — runs in your browser, we see nothing.";
+  "A free, open-source security report card for AI-built apps. See exactly what a stranger can read from your Supabase project and how your app is configured — runs in your browser, we store nothing.";
 
 const TITLE = "vibecheck — is your app leaking?";
 

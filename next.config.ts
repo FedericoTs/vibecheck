@@ -27,6 +27,14 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },
+  // Terms and privacy live on one combined page, but people (and HN commenters)
+  // guess the conventional paths. Send both to the real page rather than 404.
+  async redirects() {
+    return [
+      { source: "/terms", destination: "/legal", permanent: true },
+      { source: "/privacy", destination: "/legal", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;
