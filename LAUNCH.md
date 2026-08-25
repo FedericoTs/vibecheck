@@ -184,9 +184,16 @@ anyone who did not build the scanner.
 
 ## Before you post
 
-- [ ] Add SPF and DMARC for ismyappleaking.com (the tool flags this on your own
-      site, and someone will check)
-- [ ] Scan your own site once and screenshot the result for the post
-- [ ] Have the GitHub repo README match the claims in the post
+Verified in the pre-launch readiness pass (25 Aug 2026), all green:
+
+- [x] SPF and DMARC on ismyappleaking.com — live: `v=spf1 -all` and DMARC
+      `p=reject`. The tool grades its own domain A, so a curious commenter finds
+      it locked down.
+- [x] Scanned the tool's own site — grade A, 61/61 checks pass, 0 to fix.
+      Screenshot that result for the post.
+- [x] Repo is public, MIT, README matches the claims. No server secret anywhere
+      in the 122-commit history (checked).
+- [x] Every link in this copy resolves (200). `/terms` and `/privacy` now
+      redirect to `/legal` instead of 404.
 - [ ] Watch the partial-scan rate for the first few hours. Above 10% means
       something upstream is throttling and reports are degrading.
