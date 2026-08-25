@@ -13,6 +13,7 @@ import { buildScanOutcome, buildRepoOutcome, nextCountState } from '@/lib/scan/t
 import { CATALOGUE_CLAIM } from '@/lib/scan/catalogue';
 import { categoryBlurb } from '@/lib/scan/category-info';
 import { buildFixPrompt, buildRepoFixPrompt, fixFor } from '@/lib/scan/fixes';
+import { buildReportMarkdown } from '@/lib/scan/report-markdown';
 import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals, CrawlerMatrix, CrawlerProbe } from '@/components/report-visuals';
 import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
@@ -549,6 +550,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [fixCopied, setFixCopied] = useState(false);
+  const [mdDownloaded, setMdDownloaded] = useState(false);
   const [badgeCopied, setBadgeCopied] = useState(false);
   const [autoDetected, setAutoDetected] = useState(false);
   const [skipped, setSkipped] = useState<string[]>([]);
@@ -770,6 +772,26 @@ export default function Home() {
       setFixCopied(true);
       setTimeout(() => setFixCopied(false), 2400);
     });
+  }
+
+  function downloadMarkdown() {
+    if (!report) return;
+    track('report_markdown_downloaded', { grade: report.overallGrade, issues: report.issueCount });
+    // The whole report as one Markdown file for a coding agent — with the
+    // untrusted-data framing baked in, since the scanned page can contain text
+    // aimed at whatever reads this next.
+    const md = buildReportMarkdown(report, appUrl.trim() || undefined);
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = `vibecheck-${(appUrl.trim() || 'report').replace(/^https?:\/\//, '').replace(/[^\w.-]/g, '-').slice(0, 60)}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(href);
+    setMdDownloaded(true);
+    setTimeout(() => setMdDownloaded(false), 2400);
   }
 
   function copyBadge() {
@@ -1469,6 +1491,14 @@ export default function Home() {
                   : `⚡ copy the fix prompt (${report.issueCount} issue${report.issueCount === 1 ? '' : 's'})`}
               </button>
             )}
+            {/* The full report as Markdown for an agent — offered whether or not
+                anything failed, because a clean report is worth handing over too. */}
+            <button
+              onClick={downloadMarkdown}
+              className="w-full border border-line bg-panel px-5 py-3 font-mono text-xs font-medium uppercase tracking-wider text-muted transition hover:border-muted hover:text-ink"
+            >
+              {mdDownloaded ? '✓ report.md downloaded' : '↓ download the report as markdown (for your AI agent)'}
+            </button>
             {/*
               Share. The reason people do not post a security result is the fear
               of pointing strangers at their app — so show them the exact card
