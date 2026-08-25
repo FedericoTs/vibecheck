@@ -2,6 +2,7 @@ import type { Grade } from '@/lib/scan/types';
 import { SEVERITY_ORDER, severityCounts, type Report, type ReportCategory, type Severity } from '@/lib/scan/report';
 import type { LighthouseScores, CoreWebVitals } from '@/lib/scan/lighthouse';
 import type { CrawlerAccess } from '@/lib/scan/visibility';
+import type { CrawlerProbeResult } from '@/lib/scan/crawler-probe';
 
 /** grade -> letter/border colour classes, shared across the report. */
 export function tone(grade: Grade | null): string {
@@ -312,6 +313,60 @@ export function CrawlerMatrix({ crawlers }: { crawlers: CrawlerAccess[] }) {
       <p className="mt-4 text-xs leading-relaxed text-faint">
         Blocking a crawler is a deliberate choice — reported, not graded. But if you want ChatGPT, Claude, Perplexity
         or Gemini to be able to cite you, those bots need access.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * What AI crawlers ACTUALLY received. The matrix above reads robots.txt and
+ * infers; this fetched the page as each crawler and observed the result — so it
+ * catches a site that allows GPTBot in robots yet serves it an empty shell or a
+ * bot wall. Reported, never graded: a reduced response has legitimate causes.
+ */
+export function CrawlerProbe({ probe }: { probe: CrawlerProbeResult }) {
+  if (!probe.checked || probe.probes.length === 0) return null;
+  const tone = (v: string) =>
+    v === 'full' ? 'text-safe' : v === 'reduced' ? 'text-warn' : 'text-danger';
+  const mark = (v: string) => (v === 'full' ? '✓' : v === 'reduced' ? '~' : '✗');
+  return (
+    <div className="border border-line bg-panel p-5">
+      <div className="mb-4 flex items-baseline justify-between">
+        <p className="kicker">
+          What AI crawlers actually got{' '}
+          <span className="tracking-normal text-faint" style={{ textTransform: 'none' }}>
+            · fetched as each bot
+          </span>
+        </p>
+        <p className="font-mono text-xs text-faint">{probe.baselineWords} words in a browser</p>
+      </div>
+      <div className="space-y-2.5">
+        {probe.probes.map((p) => (
+          <div key={p.name} className="flex items-start gap-2.5">
+            <span className={`mt-px font-mono text-sm ${tone(p.verdict)}`}>{mark(p.verdict)}</span>
+            <div className="min-w-0 flex-1">
+              <span className="text-sm text-ink">
+                {p.name} <span className="text-faint">· {p.purpose}</span>
+              </span>
+              <span className="mt-0.5 block break-words font-mono text-xs text-faint">
+                {p.detail}
+                {p.parityPercent != null && (
+                  <span className="ml-2 inline-block h-1.5 w-24 overflow-hidden rounded-full bg-line align-middle">
+                    <span
+                      className={`block h-full ${p.parityPercent >= 80 ? 'bg-safe' : p.parityPercent >= 30 ? 'bg-warn' : 'bg-danger'}`}
+                      style={{ width: `${p.parityPercent}%` }}
+                    />
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-4 text-xs leading-relaxed text-faint">
+        We sent each bot&rsquo;s real User-Agent to your own page and compared what came back to what a browser sees. A
+        low number means the crawler is allowed but can&rsquo;t actually read you — reported, not graded, because bot
+        protection and paywalls are legitimate reasons.
       </p>
     </div>
   );

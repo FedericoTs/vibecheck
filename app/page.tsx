@@ -13,7 +13,7 @@ import { buildScanOutcome, buildRepoOutcome, nextCountState } from '@/lib/scan/t
 import { CATALOGUE_CLAIM } from '@/lib/scan/catalogue';
 import { categoryBlurb } from '@/lib/scan/category-info';
 import { buildFixPrompt, buildRepoFixPrompt, fixFor } from '@/lib/scan/fixes';
-import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals, CrawlerMatrix } from '@/components/report-visuals';
+import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals, CrawlerMatrix, CrawlerProbe } from '@/components/report-visuals';
 import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
 import type { RoutesScanResult } from '@/lib/scan/routes';
@@ -1381,6 +1381,11 @@ export default function Home() {
               {inputs?.visibility?.crawlers && inputs.visibility.crawlers.length > 0 && (
                 <div className="mb-3">
                   <CrawlerMatrix crawlers={inputs.visibility.crawlers} />
+                </div>
+              )}
+              {inputs?.visibility?.crawlerProbe?.checked && (
+                <div className="mb-3">
+                  <CrawlerProbe probe={inputs.visibility.crawlerProbe} />
                 </div>
               )}
               <div className="space-y-3">

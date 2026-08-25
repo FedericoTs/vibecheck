@@ -4,8 +4,12 @@ import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { safeFetch, UA } from '@/lib/scan/fetch';
 import { analyzeVisibility, isJsOnlyShell } from '@/lib/scan/visibility';
 import { findSmuggledText } from '@/lib/scan/smuggling';
+import { probeCrawlers } from '@/lib/scan/crawler-probe';
 
 export const runtime = 'nodejs';
+// The synthetic crawler probe adds a few outbound fetches to a possibly-slow
+// origin. Match the ceiling the other multi-fetch routes declare.
+export const maxDuration = 60;
 
 const MAX_BYTES = 2_000_000;
 const TIMEOUT_MS = 6000;
@@ -76,8 +80,25 @@ export async function POST(request: Request): Promise<Response> {
     finalUrl.host,
   );
 
+  // Fetch the page AS the AI crawlers and measure what they actually receive.
+  // Every request revalidates the URL through assertPublicUrl + safeFetch, so a
+  // crawler probe can never become an SSRF or redirect-to-private hop.
+  const crawlerProbe = await probeCrawlers(
+    finalUrl.toString(),
+    html,
+    async (u, init) => {
+      // safeFetch enforces its own timeout, so the probe's AbortSignal is a
+      // belt-and-braces backstop rather than the primary bound.
+      const safe = await assertPublicUrl(u);
+      const { response } = await safeFetch(safe, { headers: init?.headers, timeoutMs: TIMEOUT_MS });
+      return response;
+    },
+    { timeoutMs: TIMEOUT_MS },
+  ).catch(() => null);
+
   return NextResponse.json({
     ...result,
+    crawlerProbe,
     // The hidden-instruction scan rides along here because this route already
     // holds the served HTML AND the JS-only-shell verdict. That verdict is
     // passed through as limitedCoverage so the report can refuse to show a

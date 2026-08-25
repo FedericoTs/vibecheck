@@ -1,5 +1,6 @@
 import type { Grade } from './types';
 import { scoreToGrade } from './grade';
+import type { CrawlerProbeResult } from './crawler-probe';
 
 /**
  * AI visibility — can an LLM or a search crawler actually read this app?
@@ -32,6 +33,12 @@ export interface VisibilityResult {
   checks: VisibilityCheck[];
   failed: VisibilityCheck[];
   crawlers: CrawlerAccess[];
+  /**
+   * What AI crawlers ACTUALLY received when we fetched the page as them —
+   * added by the API route after the fact (this pure function has no network),
+   * so it is optional here. Proof to sit beside the robots-policy inference.
+   */
+  crawlerProbe?: CrawlerProbeResult;
   /** The opening words a non-JS reader receives, quoted verbatim as evidence. */
   excerpt: { excerpt: string; words: number };
   grade: Grade;
