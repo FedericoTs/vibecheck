@@ -33,8 +33,8 @@ const INLINE_CHECKS = {
   headers: 9,
   /** gradeTransport: https, redirect, HSTS age, preload, mixed content, cert chain, subdomain takeover. */
   transport: 7,
-  /** gradeFundamentals: title, description, favicon, viewport, lang, 404, compression, caching. */
-  fundamentals: 8,
+  /** gradeFundamentals: https, mixed-content, viewport, title, description, OG, canonical, lang, main-landmark. */
+  fundamentals: 9,
   /** gradeVisibility: no-JS content, JSON-LD, canonical, sitemap, readability, headings, alt text, AI policy, llms.txt. */
   visibility: 9,
   /** gradePrivacy: consent gate, trackers before consent, cookie banner, policy link, EU host, data-transfer signals. */

@@ -46,6 +46,18 @@ export function analyzeFundamentals(html: string, finalUrl: URL): FundamentalsRe
     { key: 'og', label: 'Open Graph tags', pass: has(/<meta[^>]+property=["']og:(title|image)["']/i, html), severity: 'low', fix: 'Add og:title and og:image for social sharing.' },
     { key: 'canonical', label: 'Canonical link', pass: has(/<link[^>]+rel=["']canonical["']/i, html), severity: 'low', fix: 'Add <link rel="canonical"> to avoid duplicate-content issues.' },
     { key: 'lang', label: 'HTML lang attribute', pass: has(/<html[^>]+lang=/i, html), severity: 'low', fix: 'Add a lang attribute to <html> (e.g. lang="en").' },
+    {
+      // One deterministic accessibility landmark: is there a <main>? Screen
+      // readers let people jump straight to it. Kept to the single unambiguous
+      // signal on purpose — form-label and contrast checks need a rendered
+      // browser and are too misfire-prone to infer from static HTML, so they are
+      // out of scope here rather than guessed at.
+      key: 'main-landmark',
+      label: 'Main content landmark',
+      pass: has(/<main[\s>]/i, html) || has(/role=["']main["']/i, html),
+      severity: 'low',
+      fix: 'Wrap the primary content in a <main> element (or role="main") so screen readers can skip to it.',
+    },
   ];
 
   const failed = checks.filter((c) => !c.pass);

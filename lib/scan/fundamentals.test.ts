@@ -10,7 +10,7 @@ const FULL = `<!doctype html><html lang="en"><head>
 <meta name="description" content="the best app">
 <meta property="og:title" content="My App"><meta property="og:image" content="/og.png">
 <link rel="canonical" href="https://my.app">
-</head><body><script src="https://my.app/a.js"></script></body></html>`;
+</head><body><main><script src="https://my.app/a.js"></script></main></body></html>`;
 
 describe('analyzeFundamentals', () => {
   it('a fully-set-up https page passes everything (A)', () => {
@@ -36,5 +36,21 @@ describe('analyzeFundamentals', () => {
   it('an http page is not dinged for mixed content (only checked on https)', () => {
     const r = analyzeFundamentals('<img src="http://cdn/x.png">', http);
     expect(r.checks.find((c) => c.key === 'mixed-content')?.pass).toBe(true);
+  });
+});
+
+describe('main content landmark', () => {
+  const base = '<html lang="en"><head><title>t</title></head>';
+  it('passes when a <main> element is present', () => {
+    const r = analyzeFundamentals(`${base}<body><main>content</main></body></html>`, new URL('https://x.com'));
+    expect(r.checks.find((c) => c.key === 'main-landmark')?.pass).toBe(true);
+  });
+  it('passes on role="main" too', () => {
+    const r = analyzeFundamentals(`${base}<body><div role="main">content</div></body></html>`, new URL('https://x.com'));
+    expect(r.checks.find((c) => c.key === 'main-landmark')?.pass).toBe(true);
+  });
+  it('fails when there is no main landmark at all', () => {
+    const r = analyzeFundamentals(`${base}<body><div>content</div></body></html>`, new URL('https://x.com'));
+    expect(r.checks.find((c) => c.key === 'main-landmark')?.pass).toBe(false);
   });
 });

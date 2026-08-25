@@ -1,6 +1,7 @@
 import type { Grade } from './types';
 import { scoreToGrade } from './grade';
 import type { CrawlerProbeResult } from './crawler-probe';
+import { analyzeSchema, describeSchema } from './schema';
 
 /**
  * AI visibility — can an LLM or a search crawler actually read this app?
@@ -249,6 +250,7 @@ export function analyzeVisibility(facts: VisibilityFacts, host = ''): Visibility
   const blocked = blockedAiAgents(facts.robotsTxt);
   // Quoted verbatim in the check below — evidence beats an abstraction.
   const excerpt = crawlerExcerpt(html);
+  const schema = analyzeSchema(html);
 
   const checks: VisibilityCheck[] = [
     {
@@ -263,11 +265,16 @@ export function analyzeVisibility(facts: VisibilityFacts, host = ''): Visibility
     {
       key: 'structured-data',
       label: 'Structured data (JSON-LD)',
-      pass: hasStructuredData(html),
+      // Present AND parses. A malformed block is worse than none — search and AI
+      // engines skip it silently — so a broken block fails the check even though
+      // markup exists. The "no markup" case stays a pass: it is a missed
+      // opportunity, not a defect, and grading it would punish plain pages.
+      pass: schema.broken === 0,
       severity: 'low',
-      detail: hasStructuredData(html)
-        ? 'schema.org markup found'
-        : 'none found — assistants have to infer what this page is',
+      detail:
+        schema.blocks === 0
+          ? 'none found — assistants have to infer what this page is'
+          : describeSchema(schema),
     },
     {
       key: 'canonical',
