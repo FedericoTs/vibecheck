@@ -63,15 +63,25 @@ const LABEL_FIX: Array<[RegExp, string]> = [
   [/no open redirect/i, 'Never redirect to a URL taken from a query parameter. Allow only relative paths (reject anything starting with http:// , https:// or //), or check the target against an allowlist of your own routes. As it stands an attacker can send a link on YOUR domain that lands the victim on theirs.'],
   [/certificate is current|certificate renewal/i, "Renew the TLS certificate. If you manage it yourself, automate renewal with certbot or your host's managed certificates — an expired certificate shows every visitor a full-page browser warning and takes the app down in practice."],
   [/certificate matches/i, 'Issue a certificate that covers the hostname people actually visit (including the www/apex variant), or point the domain at the host that holds the right certificate.'],
-  [/plain http redirects/i, 'Redirect all http traffic to https with a 301, and add HSTS so browsers stop trying http at all.'],
+  [/plain http redirects|redirects http to https/i, 'Redirect all http traffic to https with a 301, and add HSTS so browsers stop trying http at all.'],
+  [/hsts max-age|max-age is long/i, 'Raise your HSTS max-age to at least a year: `Strict-Transport-Security: max-age=31536000; includeSubDomains`. A short max-age barely protects returning visitors.'],
   [/directory listing/i, 'Turn off automatic directory indexing so this folder does not list its contents. nginx: `autoindex off;` (the default). Apache: `Options -Indexes`. Better still, do not serve user uploads from a public static directory at all — proxy them through an authenticated route.'],
   [/no deprecated tls|tls 1/i, 'Disable TLS 1.0 and 1.1 at your load balancer / CDN and require TLS 1.2+ (ideally 1.3). Most managed hosts do this by default; if you terminate TLS yourself, set the minimum protocol version.'],
   [/openapi|swagger|api docs/i, 'Do not publish your API schema unless the API is meant to be public. Disable the docs route in production (FastAPI: `docs_url=None, redoc_url=None, openapi_url=None`; NestJS: only call SwaggerModule.setup outside production), or put it behind authentication.'],
+  // Scaffold: the label contains "description", which would otherwise be caught
+  // by the meta-description rule below and given the wrong fix. Match it first.
+  [/template default/i, 'Replace the generator default title and description with your own. In Next.js App Router set `metadata` in app/layout.tsx; in Vite/CRA edit index.html; in Astro/Nuxt/SvelteKit set them in the root layout. Write what the app actually is in ~60 chars of title and ~150 of description — this is the text Google, ChatGPT and every link preview use to describe you, and right now it says the template name.'],
+  // A malicious package is not "upgrade to the patched version" — there is none.
+  [/malicious/i, 'Remove this package immediately — it is flagged as malicious. Then rotate every credential that was present on any machine that ran an install (it may have exfiltrated them), and audit your lockfile for anything else it pulled in.'],
   [/content readable without javascript/i, 'Server-render or pre-render your pages so the text is in the HTML itself. In Next.js use Server Components or static generation instead of fetching everything client-side; with Vite/CRA add prerendering. Most crawlers and AI assistants never execute your JavaScript, so a client-only app is invisible to them.'],
+  [/readable prose|flesch/i, 'Simplify the copy that matters — shorter sentences and plainer words. Dense, jargon-heavy text is harder for both readers and the models that summarise your page. Aim for a Flesch score above ~50 on your key pages.'],
+  [/heading structure|one h1/i, 'Give the page exactly one <h1> (its main subject) and use <h2>/<h3> in order beneath it, without skipping levels. Crawlers and screen readers use the heading outline to understand the page.'],
+  [/llms\.txt/i, 'Optionally add an /llms.txt file — a short Markdown summary of your site for AI assistants. It is an emerging convention, not a ranking factor, so treat it as a nice-to-have after the basics.'],
+  [/ai crawler policy|crawler access/i, 'This is about your robots.txt. If you WANT ChatGPT, Claude, Perplexity or Gemini to be able to cite you, make sure their user-agents (GPTBot, ClaudeBot, PerplexityBot, Google-Extended) are not disallowed. Blocking them is a legitimate choice — only change this if being cited is the goal.'],
   [/structured data/i, 'Add JSON-LD (schema.org) describing what the page is — SoftwareApplication, Product, Article and so on. Assistants use it to understand and cite you correctly. If a block already exists, make sure it is valid JSON — a malformed block is skipped silently.'],
   [/alt text/i, 'Give every content image a descriptive `alt` attribute (`alt="what the image shows"`), and `alt=""` for purely decorative ones. Screen readers announce it and image search indexes it.'],
   [/landmark/i, 'Wrap the primary content of the page in a `<main>` element (or add `role="main"`) — once per page, in the `<body>`. Screen-reader users jump straight to it.'],
-  [/canonical url/i, 'Add a canonical link tag pointing at the preferred URL for each page.'],
+  [/canonical/i, 'Add a canonical link tag pointing at the preferred URL for each page: `<link rel="canonical" href="https://…">` in the <head>.'],
   [/sitemap published/i, 'Publish /sitemap.xml listing your real URLs (Next.js: app/sitemap.ts) so crawlers do not have to guess.'],
   [/spf record/i, 'Add a TXT record at your domain apex listing who may send mail for you, ending in -all, e.g. `v=spf1 include:_spf.google.com -all`. If you send no mail at all, publish `v=spf1 -all`.'],
   [/dmarc record published/i, 'Add a TXT record at `_dmarc.yourdomain.com`, starting at monitor mode: `v=DMARC1; p=none; rua=mailto:you@yourdomain.com`. Watch the reports for a week, then tighten to quarantine and then reject.'],
@@ -80,6 +90,9 @@ const LABEL_FIX: Array<[RegExp, string]> = [
   [/storage bucket/i, 'Make the buckets private and add Storage policies so only the owning user can read their objects. Anonymous visitors should not be able to list buckets at all.'],
   [/database functions|rpc/i, 'Review each publicly-callable function and revoke execute from the anon role for anything not meant to be public: `revoke execute on function <fn> from anon;`. Pay special attention to SECURITY DEFINER functions, which run with the owner privileges.'],
   [/source map/i, 'If your code is not meant to be public, disable source maps in your production build (Next.js: `productionBrowserSourceMaps: false`; Vite: `build.sourcemap: false`) and redeploy, so the original files are no longer reconstructable. If the project IS open source this is intentional and you can leave it — but check the recovered file list above for anything that should not have been in the repo in the first place.'],
+  // "CSP is meaningful" fails when a CSP EXISTS but is too permissive — so the
+  // fix is to tighten it, not to add one. Must precede the "add a CSP" rule.
+  [/csp is meaningful|meaningful.*csp/i, "You have a Content-Security-Policy, but it is too weak to protect you — it allows `unsafe-inline`, `unsafe-eval`, or wildcard/`https:` sources. Remove those, list the specific origins you use, and prefer nonces or hashes for any inline scripts."],
   [/content-security-policy/i, "Add a Content-Security-Policy header. Start with `default-src 'self'` plus the specific origins you actually use, then tighten."],
   [/strict-transport/i, 'Add `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`.'],
   [/clickjacking|x-frame/i, "Add `X-Frame-Options: DENY` (or CSP `frame-ancestors 'none'`) so your app cannot be embedded in an attacker page."],
@@ -90,6 +103,11 @@ const LABEL_FIX: Array<[RegExp, string]> = [
   [/cookie/i, 'Set your session cookies with `Secure; HttpOnly; SameSite=Lax` so they cannot be read by JavaScript or sent over plain http.'],
   [/realtime database/i, 'Lock down the Realtime Database rules — a default `".read": true` exposes your entire database. Require auth and scope each path to its owner.'],
   [/user list api|customer api|orders api/i, 'This endpoint returns records to anonymous callers. Require a valid session on the server and filter the query to only the rows that caller may see.'],
+  // Fundamentals basics whose category default ("add a tag to the <head>") is
+  // wrong: HTTPS and mixed content are not head tags, and lang is on <html>.
+  [/served over https/i, 'Serve the site over HTTPS. Get a TLS certificate (most hosts — Vercel, Netlify, Cloudflare — provision and renew one automatically) and force an http→https redirect.'],
+  [/mixed .*content/i, 'Change every `http://` asset URL (scripts, styles, images) to `https://`, or make them protocol-relative. A single http asset on an https page is blocked or downgrades the whole page.'],
+  [/html lang|lang attribute/i, 'Add a `lang` attribute to the root `<html>` element, e.g. `<html lang="en">`, so screen readers and translators pick the right language.'],
   [/viewport/i, 'Add `<meta name="viewport" content="width=device-width, initial-scale=1">` so the page works on phones.'],
   [/page title/i, 'Add a descriptive <title> to the page.'],
   [/description/i, 'Add a `<meta name="description">` summarising the page in ~150 characters.'],

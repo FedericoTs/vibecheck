@@ -211,3 +211,35 @@ describe('fixFor — findings must get their own fix, not a category fallthrough
     expect(fix).not.toMatch(/<head>/);
   });
 });
+
+/**
+ * Full-catalogue fix coverage. Every label the report can emit must get a fix
+ * that actually addresses THAT finding, not a category fallthrough that happens
+ * to be wrong. Grown from an audit that dumped every category/label pair; each
+ * case below was a real mismatch (or a near-miss worth pinning).
+ */
+describe('fix coverage across every category', () => {
+  const cases: Array<[string, string, RegExp, RegExp?]> = [
+    // [category, label, must-match, must-NOT-match]
+    ['scaffold', 'Title and description are yours, not the template default', /generator default|template name/i, /<meta name="description"/],
+    ['libs', 'MALICIOUS package: evil-pkg', /remove this package immediately/i, /upgrade this library/i],
+    ['libs', 'react 1.0.0 has a known vulnerability', /upgrade this library/i],
+    ['headers', 'CSP is meaningful', /too weak|unsafe-inline/i, /^Add this response header/i],
+    ['transport', 'HSTS max-age is long enough', /max-age/i],
+    ['fundamentals', 'Served over HTTPS', /HTTPS|certificate/i, /<head>/],
+    ['fundamentals', 'No mixed (http) content', /https:\/\/|asset URL/i, /<head>/],
+    ['fundamentals', 'HTML lang attribute', /<html lang/i, /<head>/],
+    ['fundamentals', 'Main content landmark', /<main>/, /<head>/],
+    ['visibility', 'Readable prose (Flesch)', /simplify|shorter sentences/i, /HTML the server sends/i],
+    ['visibility', 'Clear heading structure (one H1)', /<h1>/i, /HTML the server sends/i],
+    ['visibility', 'llms.txt', /llms\.txt/i, /HTML the server sends/i],
+    ['visibility', 'Images have alt text', /alt/i, /HTML the server sends/i],
+  ];
+
+  it.each(cases)('%s / %s gets the right fix', (cat, label, must, mustNot) => {
+    const fix = fixFor(cat, { label, pass: false } as never);
+    expect(fix).toMatch(must);
+    if (mustNot) expect(fix).not.toMatch(mustNot);
+    expect(fix).not.toBe('Review this finding and remediate it.');
+  });
+});
