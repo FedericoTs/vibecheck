@@ -191,3 +191,23 @@ describe('buildRepoFixPrompt', () => {
     expect(buildRepoFixPrompt({ ref: 'me/app', filesScanned: 60, findings: [] }, fix)).toMatch(/came back clean/);
   });
 });
+
+/**
+ * Regression: both surfaced in a real downloaded report. The alt-text check
+ * inherited the visibility category's no-JavaScript fix, and the main-landmark
+ * check inherited the fundamentals generic "add a tag to the <head>" — which is
+ * the wrong place for a <main> element. Each now maps to its own fix.
+ */
+describe('fixFor — findings must get their own fix, not a category fallthrough', () => {
+  it('alt text gets an alt fix, not the no-JavaScript fix', () => {
+    const fix = fixFor('visibility', { label: 'Images have alt text', pass: false });
+    expect(fix).toMatch(/alt/i);
+    expect(fix).not.toMatch(/server-render|javascript/i);
+  });
+
+  it('main landmark gets a body-element fix, not "add a tag to the head"', () => {
+    const fix = fixFor('fundamentals', { label: 'Main content landmark', pass: false });
+    expect(fix).toMatch(/<main>|role="main"/);
+    expect(fix).not.toMatch(/<head>/);
+  });
+});
