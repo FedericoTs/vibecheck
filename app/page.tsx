@@ -1352,7 +1352,15 @@ export default function Home() {
                 id="fix-first"
                 n="02 · Fix first"
                 title={queue.length === 1 ? 'One thing to fix' : `${queue.length} things to fix, worst first`}
-                note="Ordered by how much each one actually matters, across every area. Start at the top."
+                note={
+                  /* The queue spans every pillar, but the counter above it is
+                     security-only, by design. Two different numbers on one
+                     screen with no explanation reads as a bug in a report whose
+                     whole value is being trustworthy, so say it out loud. */
+                  queue.length === report.issueCount
+                    ? 'Ordered by how much each one actually matters. Start at the top.'
+                    : `Ordered by how much each one actually matters. ${report.issueCount} of these set your grade; the rest are privacy, findability and performance, which are reported beside it and never counted against it.`
+                }
               />
               <PriorityQueue findings={queue} fixFor={fixFor} />
             </div>
