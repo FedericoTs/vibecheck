@@ -14,7 +14,18 @@ import { CATALOGUE_CLAIM } from '@/lib/scan/catalogue';
 import { categoryBlurb } from '@/lib/scan/category-info';
 import { buildFixPrompt, buildRepoFixPrompt, fixFor } from '@/lib/scan/fixes';
 import { buildReportMarkdown } from '@/lib/scan/report-markdown';
-import { tone, PassBar, ScoreDial, SeverityBar, CategoryMatrix, LighthouseGauges, WebVitals, CrawlerMatrix, CrawlerProbe } from '@/components/report-visuals';
+import { tone, ScoreDial, SeverityBar, LighthouseGauges, WebVitals, CrawlerMatrix, CrawlerProbe } from '@/components/report-visuals';
+import { pillars, ranked, unknowns, verdict, cleared } from '@/lib/scan/insights';
+import {
+  SectionHead,
+  ScanHeader,
+  VerdictBlock,
+  Contents,
+  PillarScorecard,
+  PriorityQueue,
+  UnknownPanel,
+  ClearedPanel,
+} from '@/components/report-document';
 import type { HeadersScanResult } from '@/lib/scan/headers';
 import type { PathsScanResult } from '@/lib/scan/paths';
 import type { RoutesScanResult } from '@/lib/scan/routes';
@@ -566,6 +577,14 @@ export default function Home() {
   const [notifyError, setNotifyError] = useState('');
   const [done, setDone] = useState<string[]>([]);
   const report = useMemo(() => (inputs ? combineReport(inputs) : null), [inputs]);
+  // The document layer: pillars, the worst-first queue, what we could not
+  // determine, and what came back clean. All derived from the report we already
+  // built — no extra requests, and nothing here invents a number.
+  const pillarViews = useMemo(() => (report ? pillars(report) : []), [report]);
+  const queue = useMemo(() => (report ? ranked(report) : []), [report]);
+  const undetermined = useMemo(() => (report ? unknowns(report) : []), [report]);
+  const summary = useMemo(() => (report ? verdict(report) : null), [report]);
+  const clearedLines = useMemo(() => (report ? cleared(report) : []), [report]);
   // The key the probe actually used — typed or auto-discovered — so the
   // reproduction we print is the request that really ran.
   const [probeKey, setProbeKey] = useState('');
@@ -1190,6 +1209,19 @@ export default function Home() {
 
       {report && (
         <section>
+          {/* Provenance first: what was scanned, when, and how much of it ran.
+              A report that shows its instrument reads as a measurement; one that
+              opens on a bare letter reads as an opinion. */}
+          <div className="mb-5">
+            <ScanHeader
+              host={appUrl.trim() ? appUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : 'your app'}
+              scannedAt={badgeDate}
+              total={report.total}
+              catalogue={CATALOGUE_CLAIM}
+              partial={skipped.length}
+            />
+          </div>
+
           {/*
             THE PROOF COMES FIRST.
 
@@ -1238,7 +1270,7 @@ export default function Home() {
                     {appUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '')}
                   </p>
                 )}
-                <p className="font-display text-xl leading-snug text-ink sm:text-2xl">{report.verdict}</p>
+                {summary && <VerdictBlock grade={report.overallGrade} verdict={summary} />}
               </div>
             </div>
             {/* one honest metric row, not a dashboard */}
@@ -1266,7 +1298,6 @@ export default function Home() {
                 <p className="kicker text-faint">checks run</p>
               </div>
             </div>
-            <PassBar passed={report.passed} total={report.total} />
           </div>
 
           {autoDetected && (
@@ -1276,22 +1307,63 @@ export default function Home() {
             </p>
           )}
 
+          {/* Jump links: this is a ~70-check document, not a card. */}
+          <div className="mt-6">
+            <Contents
+              items={[
+                { id: 'scorecard', label: 'Scorecard' },
+                ...(queue.length > 0 ? [{ id: 'fix-first', label: 'Fix first', count: queue.length }] : []),
+                ...(undetermined.length > 0 ? [{ id: 'unknown', label: 'Undetermined', count: undetermined.length }] : []),
+                ...(clearedLines.length > 0 ? [{ id: 'cleared', label: 'Already fine' }] : []),
+                { id: 'audit', label: 'Full audit' },
+              ]}
+            />
+          </div>
+
           {/* how bad is it — the shape of the damage, before the where and the what */}
           {report.issueCount > 0 && (
-            <div className="mt-3">
+            <div className="mt-6">
               <SeverityBar report={report} />
             </div>
           )}
 
-          {/* every category at a glance — failing tiles first, before any scrolling */}
-          <div className="mt-3">
-            <CategoryMatrix categories={report.categories} />
+          {/* ── 01 · the scorecard ──────────────────────────────────────
+              Replaces the old flat category matrix. Same information, but
+              grouped by pillar and carrying the real 0-100 each scanner
+              computed, so a category one point off a B stops looking
+              identical to one that barely scraped in. */}
+          <div className="mt-8 space-y-4">
+            <SectionHead
+              id="scorecard"
+              n="01 · Scorecard"
+              title="Every area we measured"
+              note="Security is the only pillar that sets your grade. The rest are reported beside it so a slow page or a missing meta tag can never make an app look insecure, or hide that it is."
+            />
+            <PillarScorecard pillars={pillarViews} />
           </div>
 
-          {/* security categories — the headline */}
-          <div className="mt-6">
-            <CategoryList categories={report.categories.filter((c) => c.group === 'security')} />
-          </div>
+          {/* ── 02 · the priority queue ─────────────────────────────────
+              failingChecks() has produced this ordering for months, but only
+              the Markdown export and the fix prompt ever consumed it — so the
+              download was better organised than the page. */}
+          {queue.length > 0 && (
+            <div className="mt-10 space-y-4">
+              <SectionHead
+                id="fix-first"
+                n="02 · Fix first"
+                title={queue.length === 1 ? 'One thing to fix' : `${queue.length} things to fix, worst first`}
+                note="Ordered by how much each one actually matters, across every area. Start at the top."
+              />
+              <PriorityQueue findings={queue} fixFor={fixFor} />
+            </div>
+          )}
+
+          {/* ── 03 · what we could not determine ──────────────────────── */}
+          {undetermined.length > 0 && (
+            <div className="mt-10" id="unknown">
+              <UnknownPanel items={undetermined} />
+            </div>
+          )}
 
           {error && <p className="mt-4 font-mono text-xs text-warn">{error}</p>}
 
@@ -1370,6 +1442,35 @@ export default function Home() {
               </a>
             </div>
           )}
+
+          {/* ── 03 · what is already fine ───────────────────────────────
+              A clean scan used to have nothing to read, which is a marketing
+              problem as much as a UX one: the person most likely to share a
+              report is the one who just passed it. */}
+          {clearedLines.length > 0 && (
+            <div className="mt-10 space-y-4">
+              <SectionHead
+                id="cleared"
+                n="03 · Already fine"
+                title="What a stranger tried and could not get"
+                note="Each line is a check that actually ran and passed, not a claim about something we did not test."
+              />
+              <ClearedPanel lines={clearedLines} />
+            </div>
+          )}
+
+          {/* ── 04 · the full audit ─────────────────────────────────────
+              Everything, in full, including the passes. The sections above are
+              a way in; this is the record. */}
+          <div className="mt-10 space-y-4">
+            <SectionHead
+              id="audit"
+              n="04 · Full audit"
+              title="Every check, in full"
+              note="Grouped the way the scan ran. Passing checks are collapsed under each area — open one to see exactly what was asked and what came back."
+            />
+            <CategoryList categories={report.categories.filter((c) => c.group === 'security')} />
+          </div>
 
           {/* EU privacy — its own grade, deliberately not part of the security headline */}
           {report.categories.some((c) => c.group === 'privacy') && (
