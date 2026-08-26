@@ -5,6 +5,7 @@ import { fileEvidence, routeEvidence, headerEvidence, dnsEvidence, sourceMapEvid
 import { isGradedSecret, isHardSecret } from './secrets';
 import type { SecretsScanResult } from './secrets';
 import type { FundamentalsResult } from './fundamentals';
+import type { AccessibilityResult } from './accessibility';
 import type { LighthouseResult } from './lighthouse';
 import type { FirebaseScanResult } from './firebase';
 import type { RoutesScanResult } from './routes';
@@ -19,7 +20,7 @@ import type { ScaffoldResult } from './scaffold';
 import type { LibsScanResult } from './libs';
 import { worstGrade } from './grade';
 
-export type CategoryGroup = 'security' | 'privacy' | 'visibility' | 'basics' | 'performance';
+export type CategoryGroup = 'security' | 'privacy' | 'visibility' | 'basics' | 'accessibility' | 'performance';
 
 /** One thing the tool checked, and whether it passed. Shown as a ✓/✗ line. */
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
@@ -103,6 +104,7 @@ export interface ReportInputs {
   paths?: PathsScanResult | null;
   secrets?: SecretsScanResult | null;
   fundamentals?: FundamentalsResult | null;
+  accessibility?: AccessibilityResult | null;
   lighthouse?: LighthouseResult | null;
   firebase?: FirebaseScanResult | null;
   routes?: RoutesScanResult | null;
@@ -643,6 +645,21 @@ export function combineReport(inp: ReportInputs): Report {
     const checks: CheckItem[] = f.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.pass ? undefined : 'missing from the page', severity: c.severity }));
     categories.push({ key: 'fundamentals', group: 'basics', label: 'Fundamentals', grade: f.grade, score: f.score, summary: f.summary, checks });
   }
+
+  if (inp.accessibility) {
+    const a = inp.accessibility;
+    // Its own group and its own grade. Accessibility must never drag the
+    // security headline, and security must never paper over it.
+    const checks: CheckItem[] = a.checks.map((c) => ({
+      label: c.label,
+      pass: c.pass,
+      detail: c.detail,
+      severity: c.severity,
+      graded: c.graded,
+    }));
+    categories.push({ key: 'accessibility', group: 'accessibility', label: 'Accessibility', grade: a.grade, score: a.score, summary: a.summary, checks });
+  }
+
   if (inp.lighthouse) {
     const l = inp.lighthouse;
     const items: Array<[string, number | null]> = [

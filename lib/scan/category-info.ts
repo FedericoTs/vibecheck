@@ -36,6 +36,8 @@ export const CATEGORY_BLURB: Record<string, string> = {
     'We decoded invisible Unicode characters in your page — text a human cannot see but an AI reading your site will obey.',
   scaffold:
     'We checked whether your app still ships the title, description and metadata its generator created, which is the tell of an unfinished deploy.',
+  accessibility:
+    'We read your markup the way assistive technology does — looking for form fields with no label, buttons that announce nothing but their role, a viewport that forbids zooming, and duplicate ids that break the references a screen reader follows.',
   visibility:
     'We checked what search engines and AI crawlers can actually read, and which of them you allow — this decides whether ChatGPT or Claude can cite you.',
   fundamentals: 'Basic hygiene a browser and a crawler both expect: title, description, favicon, viewport, compression.',

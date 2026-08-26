@@ -3,6 +3,7 @@ import { rateLimitResponse } from '@/lib/rate-limit';
 import { assertPublicUrl } from '@/lib/scan/ssrf';
 import { safeFetch } from '@/lib/scan/fetch';
 import { analyzeFundamentals } from '@/lib/scan/fundamentals';
+import { analyzeAccessibility } from '@/lib/scan/accessibility';
 
 export const runtime = 'nodejs';
 
@@ -30,7 +31,12 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const { response, url } = await safeFetch(target);
     const html = (await response.text()).slice(0, MAX_BYTES);
-    return NextResponse.json(analyzeFundamentals(html, url));
+    // Accessibility rides along on the SAME html — a second pillar for zero
+    // extra requests, and it must never see different bytes than fundamentals.
+    return NextResponse.json({
+      ...analyzeFundamentals(html, url),
+      accessibility: analyzeAccessibility(html, url.host),
+    });
   } catch {
     return NextResponse.json({ error: 'Could not reach that URL' }, { status: 502 });
   }

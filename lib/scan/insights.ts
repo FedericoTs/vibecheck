@@ -25,12 +25,13 @@ import type { Grade } from './types';
  * take, then what leaks about your visitors, then whether you can be found,
  * then whether the page is put together, then how fast it is.
  */
-export const PILLAR_ORDER: CategoryGroup[] = ['security', 'privacy', 'visibility', 'basics', 'performance'];
+export const PILLAR_ORDER: CategoryGroup[] = ['security', 'privacy', 'accessibility', 'visibility', 'basics', 'performance'];
 
 export const PILLAR_LABEL: Record<CategoryGroup, string> = {
   security: 'Security',
   privacy: 'Privacy',
   visibility: 'Findability',
+  accessibility: 'Accessibility',
   basics: 'Fundamentals',
   performance: 'Performance',
 };
@@ -40,6 +41,8 @@ export const PILLAR_BLURB: Record<CategoryGroup, string> = {
   security: 'What a stranger can reach without logging in. This is the only pillar that sets your grade.',
   privacy: 'What runs and what is collected before a visitor agrees to anything.',
   visibility: 'Whether search engines and AI answer engines can read and cite you.',
+  accessibility:
+    'Barriers we can prove from the markup you served. Automated checks catch roughly half of what matters, so passing here is not a claim of conformance.',
   basics: 'The hygiene a browser and a crawler both expect from any page.',
   performance: "Google's own measurement of how the page loads and behaves.",
 };
@@ -230,7 +233,8 @@ const CLEARED: Record<string, string> = {
   smuggling: 'No invisible text is hiding on your page for an AI to obey.',
   scaffold: 'Your app has its own name and description, not a generator default.',
   visibility: 'Search engines and AI answer engines can read and cite this page.',
-  fundamentals: 'Title, description, viewport and language are all where a browser expects them.',
+  fundamentals: 'Title, description and viewport are all where a browser expects them.',
+  accessibility: 'No automated accessibility barriers: every field, button and link we found can be named and reached.',
   lighthouse: 'Google measured this page as fast, accessible and correctly marked up.',
 };
 

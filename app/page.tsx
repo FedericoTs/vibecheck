@@ -42,6 +42,7 @@ import { toCycloneDX } from '@/lib/scan/sbom';
 import { gradeSecrets, type SecretsScanResult } from '@/lib/scan/secrets';
 import type { LibsScanResult } from '@/lib/scan/libs';
 import type { FundamentalsResult } from '@/lib/scan/fundamentals';
+import type { AccessibilityResult } from '@/lib/scan/accessibility';
 import type { LighthouseResult } from '@/lib/scan/lighthouse';
 
 const GITHUB_URL = 'https://github.com/FedericoTs/vibecheck';
@@ -678,7 +679,11 @@ export default function Home() {
           }
         >('/api/scan/secrets', 'secrets')
       : Promise.resolve(null);
-    const fundamentalsP = appUrl.trim() ? postScan<FundamentalsResult>('/api/scan/fundamentals', 'fundamentals') : Promise.resolve(null);
+    // One request, two pillars: the fundamentals route runs the accessibility
+    // pass over the very same HTML rather than fetching the page twice.
+    const fundamentalsP = appUrl.trim()
+      ? postScan<FundamentalsResult & { accessibility?: AccessibilityResult }>('/api/scan/fundamentals', 'fundamentals')
+      : Promise.resolve(null);
     const routesP = appUrl.trim() ? postScan<RoutesScanResult>('/api/scan/routes', 'admin & debug routes') : Promise.resolve(null);
     const aiP = appUrl.trim() ? postScan<AiSurfaceResult>('/api/scan/ai', 'AI & MCP endpoints') : Promise.resolve(null);
     const privacyP = appUrl.trim() ? postScan<PrivacyResult>('/api/scan/privacy', 'EU privacy') : Promise.resolve(null);
@@ -719,7 +724,7 @@ export default function Home() {
       ]);
       if (secrets?.firebase) setAutoDetected(true);
 
-      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals, privacy, email, transport, visibility, libraries: secrets?.libraries ?? null, smuggling: visibility?.smuggling ?? null, devServer, scaffold: devServer?.scaffold ?? null };
+      const base: ReportInputs = { supabase: sb, firebase: fb, headers: hdr, paths, routes, ai, secrets, fundamentals, accessibility: fundamentals?.accessibility ?? null, privacy, email, transport, visibility, libraries: secrets?.libraries ?? null, smuggling: visibility?.smuggling ?? null, devServer, scaffold: devServer?.scaffold ?? null };
       setInputs(base);
 
       // Lighthouse is slow (10-30s) — render the security card now, fill it in when
@@ -1494,10 +1499,10 @@ export default function Home() {
           )}
 
           {/* fundamentals + performance — secondary, own grades */}
-          {(report.categories.some((c) => c.group === 'basics' || c.group === 'performance') || lhLoading || lhFailed) && (
+          {(report.categories.some((c) => c.group === 'basics' || c.group === 'accessibility' || c.group === 'performance') || lhLoading || lhFailed) && (
             <div className="mt-8">
               <p className="kicker mb-3">
-                Visibility, fundamentals &amp; performance <span className="text-faint">· separate from the security grade</span>
+                Accessibility, fundamentals &amp; performance <span className="text-faint">· separate from the security grade</span>
               </p>
               {inputs?.lighthouse?.scores && (
                 <div className="mb-3 border border-line bg-panel p-5">
@@ -1520,8 +1525,8 @@ export default function Home() {
                 </div>
               )}
               <div className="space-y-3">
-                {report.categories.some((c) => c.group === 'basics' || c.group === 'performance') && (
-                  <CategoryList categories={report.categories.filter((c) => c.group === 'basics' || c.group === 'performance')} />
+                {report.categories.some((c) => c.group === 'basics' || c.group === 'accessibility' || c.group === 'performance') && (
+                  <CategoryList categories={report.categories.filter((c) => c.group === 'basics' || c.group === 'accessibility' || c.group === 'performance')} />
                 )}
                 {lhLoading && (
                   <div className="flex items-center gap-2.5 border border-line bg-panel px-4 py-3">

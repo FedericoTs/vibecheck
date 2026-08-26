@@ -221,6 +221,17 @@ describe('fixFor — findings must get their own fix, not a category fallthrough
 describe('fix coverage across every category', () => {
   const cases: Array<[string, string, RegExp, RegExp?]> = [
     // [category, label, must-match, must-NOT-match]
+    // The accessibility pillar. Every one of these bottomed out at the bare
+    // "Review this finding" fallback when the pillar first landed, which is the
+    // recurring failure mode: a new scanner ships and its fixes do not.
+    ['accessibility', 'Form fields have labels', /<label>|aria-label/i, /placeholder is a label/i],
+    ['accessibility', 'Buttons and links have names', /aria-label|<title>/i],
+    ['accessibility', 'Zoom is not disabled', /user-scalable|maximum-scale/i],
+    ['accessibility', 'Page language is declared', /<html lang/i],
+    ['accessibility', 'No forced tab order', /tabindex/i],
+    ['accessibility', 'No duplicate element ids', /unique|aria-labelledby/i],
+    ['accessibility', 'Embedded frames are titled', /iframe/i],
+    ['accessibility', 'Skip-to-content link', /skip link|Skip to content/i],
     ['scaffold', 'Title and description are yours, not the template default', /generator default|template name/i, /<meta name="description"/],
     ['libs', 'MALICIOUS package: evil-pkg', /remove this package immediately/i, /upgrade this library/i],
     ['libs', 'react 1.0.0 has a known vulnerability', /upgrade this library/i],

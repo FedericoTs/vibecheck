@@ -39,18 +39,24 @@ describe('analyzeFundamentals', () => {
   });
 });
 
-describe('main content landmark', () => {
+/**
+ * `lang` and `main-landmark` moved to lib/scan/accessibility.ts when that became
+ * its own pillar; their tests moved with them. This asserts the move actually
+ * happened rather than leaving the checks quietly duplicated in both places,
+ * which would inflate the catalogue count and double-report one finding.
+ */
+describe('accessibility checks have moved out', () => {
   const base = '<html lang="en"><head><title>t</title></head>';
-  it('passes when a <main> element is present', () => {
-    const r = analyzeFundamentals(`${base}<body><main>content</main></body></html>`, new URL('https://x.com'));
-    expect(r.checks.find((c) => c.key === 'main-landmark')?.pass).toBe(true);
-  });
-  it('passes on role="main" too', () => {
-    const r = analyzeFundamentals(`${base}<body><div role="main">content</div></body></html>`, new URL('https://x.com'));
-    expect(r.checks.find((c) => c.key === 'main-landmark')?.pass).toBe(true);
-  });
-  it('fails when there is no main landmark at all', () => {
+  it('no longer reports lang or the main landmark here', () => {
     const r = analyzeFundamentals(`${base}<body><div>content</div></body></html>`, new URL('https://x.com'));
-    expect(r.checks.find((c) => c.key === 'main-landmark')?.pass).toBe(false);
+    const keys = r.checks.map((c) => c.key);
+    expect(keys).not.toContain('main-landmark');
+    expect(keys).not.toContain('lang');
+  });
+
+  it('does not penalise a page for them either', () => {
+    const withMain = analyzeFundamentals(`${base}<body><main>content</main></body></html>`, new URL('https://x.com'));
+    const without = analyzeFundamentals(`${base}<body><div>content</div></body></html>`, new URL('https://x.com'));
+    expect(withMain.score).toBe(without.score);
   });
 });

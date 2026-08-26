@@ -15,6 +15,8 @@ import type { Report, CheckItem } from './report';
 
 /** Guidance keyed by category, used when nothing more specific matches. */
 const CATEGORY_FIX: Record<string, string> = {
+  accessibility:
+    'Fix the markup this check names so the control can be reached and announced by assistive technology, then re-run the scan.',
   scaffold:
     'Replace the generator default title and description with your own. In Next.js App Router set `metadata` in app/layout.tsx; in Vite or CRA edit index.html; in Astro/Nuxt/SvelteKit set them in the root layout. Write what the app actually is in ~60 characters of title and ~150 of description — this is the text Google, ChatGPT and every link preview use to describe you, and right now it says the template name.',
   devserver:
@@ -52,6 +54,16 @@ const CATEGORY_FIX: Record<string, string> = {
 
 /** More specific guidance when the label tells us exactly what failed. */
 const LABEL_FIX: Array<[RegExp, string]> = [
+  // ── accessibility ──────────────────────────────────────────────────
+  // These sit first: 'labels', 'names' and 'links' all appear in broader rules
+  // below, and first match wins.
+  [/form fields have labels/i, 'Give every form field a name a screen reader can announce. Easiest is a wrapping label: `<label>Email <input type="email"></label>`. A `<label for="id">` pointing at the field works too, and `aria-label` is the fallback when no visible label fits. A placeholder is not a label - it disappears the moment someone types.'],
+  [/buttons and links have names/i, 'Name the icon-only controls. Add `aria-label="Close"` to the button, or put a `<title>Close</title>` inside the `<svg>`. Without it the control is announced as just "button", which tells a screen-reader user nothing about what it does.'],
+  [/zoom is not disabled/i, 'Remove `user-scalable=no` and any `maximum-scale` below 2 from your viewport meta tag. It should read `<meta name="viewport" content="width=device-width, initial-scale=1">`. Those settings stop people enlarging text on a phone, which is the single most common way someone with low vision reads a page.'],
+  [/forced tab order/i, 'Remove the positive `tabindex` values. Any number above 0 yanks that element to the front of the tab order for the whole page, so keyboard focus jumps somewhere unexpected. Use `tabindex="0"` to make something focusable in its natural position, or `-1` to make it focusable only from script.'],
+  [/duplicate element ids/i, 'Make every `id` on the page unique. Duplicates are invalid HTML and they silently break accessibility: `label[for]` and `aria-labelledby` both resolve to the first match, so the second field ends up sharing or losing its name.'],
+  [/embedded frames are titled/i, 'Add a `title` to each `<iframe>` describing what it contains, e.g. `<iframe title="Location map">`. Without one it is announced as just "iframe". If the frame is purely decorative, mark it `aria-hidden="true"` instead.'],
+  [/skip-to-content/i, 'Optional: add a skip link as the first focusable element - `<a href="#main">Skip to content</a>` - so keyboard users can jump past the navigation. Visible landmarks like `<main>` and `<nav>` serve a similar purpose, which is why this is reported rather than counted against you.'],
   [/tracking cookies before consent/i, 'Stop setting analytics cookies on first load. Load the analytics script only AFTER the visitor opts in, and default the choice to off. Cookieless analytics (Plausible, Umami, Fathom) avoid the problem entirely.'],
   [/third-party trackers/i, 'Load these scripts only after an explicit opt-in — not on page load. Wrap them in your consent check, or replace them with cookieless analytics that need no consent.'],
   [/consent banner/i, 'Add a consent mechanism that blocks non-essential scripts until the visitor chooses, with reject as easy as accept. A banner that only says "we use cookies" while already tracking does not do anything.'],
@@ -107,7 +119,7 @@ const LABEL_FIX: Array<[RegExp, string]> = [
   // wrong: HTTPS and mixed content are not head tags, and lang is on <html>.
   [/served over https/i, 'Serve the site over HTTPS. Get a TLS certificate (most hosts — Vercel, Netlify, Cloudflare — provision and renew one automatically) and force an http→https redirect.'],
   [/mixed .*content/i, 'Change every `http://` asset URL (scripts, styles, images) to `https://`, or make them protocol-relative. A single http asset on an https page is blocked or downgrades the whole page.'],
-  [/html lang|lang attribute/i, 'Add a `lang` attribute to the root `<html>` element, e.g. `<html lang="en">`, so screen readers and translators pick the right language.'],
+  [/html lang|lang attribute|page language/i, 'Add a `lang` attribute to the root `<html>` element, e.g. `<html lang="en">`, so screen readers and translators pick the right language.'],
   [/viewport/i, 'Add `<meta name="viewport" content="width=device-width, initial-scale=1">` so the page works on phones.'],
   [/page title/i, 'Add a descriptive <title> to the page.'],
   [/description/i, 'Add a `<meta name="description">` summarising the page in ~150 characters.'],
