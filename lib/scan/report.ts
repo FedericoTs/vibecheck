@@ -70,6 +70,19 @@ export interface ReportCategory {
   group: CategoryGroup;
   label: string;
   grade: Grade | null; // null = ran but errored (not counted toward the overall grade)
+  /**
+   * The 0-100 the grade letter came from, where the scanner computed one.
+   *
+   * Ten scanners already produce this and it used to be dropped here, which left
+   * the UI with five buckets where the engine had a hundred: 61 and 89 both
+   * render "C" and look identical. Carrying the number through lets a bar show
+   * real distance to the next grade, and costs no extra probing.
+   *
+   * Optional on purpose. Some categories are a true binary — a dev build is
+   * being served or it is not — and inventing a number for those would be false
+   * precision, the exact sin this tool exists to avoid.
+   */
+  score?: number;
   summary: string;
   checks: CheckItem[];
 }
@@ -359,7 +372,7 @@ export function combineReport(inp: ReportInputs): Report {
         evidence: n > 0 && sm.mapUrls?.length ? ev(sourceMapEvidence(sm.mapUrls[0])) : undefined,
       });
     }
-    categories.push({ key: 'secrets', group: 'security', label: 'Exposed secrets', grade: s.grade, summary: s.summary, checks });
+    categories.push({ key: 'secrets', group: 'security', label: 'Exposed secrets', grade: s.grade, score: s.score, summary: s.summary, checks });
   }
   if (inp.libraries && (inp.libraries.detected > 0 || inp.libraries.findings.length > 0)) {
     const lb = inp.libraries;
@@ -394,7 +407,7 @@ export function combineReport(inp: ReportInputs): Report {
               },
         )
       : [{ label: 'No exposed AI or MCP endpoints', pass: true, detail: `${a.findings.length} common AI endpoints checked` }];
-    categories.push({ key: 'ai', group: 'security', label: 'AI & MCP endpoints', grade: a.grade, summary: a.summary, checks });
+    categories.push({ key: 'ai', group: 'security', label: 'AI & MCP endpoints', grade: a.grade, score: a.score, summary: a.summary, checks });
   }
 
   if (inp.routes) {
@@ -433,7 +446,7 @@ export function combineReport(inp: ReportInputs): Report {
           `. The names imply they change something, and we cannot verify you own this app, so we did not request them. Check them yourself.`,
       });
     }
-    categories.push({ key: 'routes', group: 'security', label: 'Admin & debug routes', grade: r.grade, summary: r.summary, checks });
+    categories.push({ key: 'routes', group: 'security', label: 'Admin & debug routes', grade: r.grade, score: r.score, summary: r.summary, checks });
   }
 
   if (inp.paths) {
@@ -451,7 +464,7 @@ export function combineReport(inp: ReportInputs): Report {
             evidence: f.exposed ? ev(fileEvidence(p.host, f.path)) : undefined,
           },
     );
-    categories.push({ key: 'paths', group: 'security', label: 'Exposed files', grade: p.grade, summary: p.summary, checks });
+    categories.push({ key: 'paths', group: 'security', label: 'Exposed files', grade: p.grade, score: p.score, summary: p.summary, checks });
   }
   if (inp.headers) {
     const h = inp.headers;
@@ -464,7 +477,7 @@ export function combineReport(inp: ReportInputs): Report {
       severity: c.severity,
       evidence: c.present ? undefined : ev(headerEvidence(h.host, c.key)),
     }));
-    categories.push({ key: 'headers', group: 'security', label: 'Security headers', grade: h.grade, summary: h.summary, checks });
+    categories.push({ key: 'headers', group: 'security', label: 'Security headers', grade: h.grade, score: h.score, summary: h.summary, checks });
   }
 
   // ── basics + performance (secondary — own grades, never drag security) ─
@@ -473,7 +486,7 @@ export function combineReport(inp: ReportInputs): Report {
     issueCount += t.failed.length;
     securityGrades.push(t.grade);
     const checks: CheckItem[] = t.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail, severity: c.severity }));
-    categories.push({ key: 'transport', group: 'security', label: 'HTTPS & redirects', grade: t.grade, summary: t.summary, checks });
+    categories.push({ key: 'transport', group: 'security', label: 'HTTPS & redirects', grade: t.grade, score: t.score, summary: t.summary, checks });
   }
 
   if (inp.email) {
@@ -487,15 +500,15 @@ export function combineReport(inp: ReportInputs): Report {
       severity: c.severity,
       evidence: c.pass || !/^(spf|dmarc)$/.test(c.key) ? undefined : ev(dnsEvidence(e.host, c.key as 'spf' | 'dmarc')),
     }));
-    categories.push({ key: 'email', group: 'security', label: 'Email spoofing protection', grade: e.grade, summary: e.summary, checks });
+    categories.push({ key: 'email', group: 'security', label: 'Email spoofing protection', grade: e.grade, score: e.score, summary: e.summary, checks });
   }
 
   if (inp.privacy) {
     const pr = inp.privacy;
     // Own group, own grade: EU privacy is NOT a security finding, and must not
     // drag the security headline (nor be dragged by it).
-    const checks: CheckItem[] = pr.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail }));
-    categories.push({ key: 'privacy', group: 'privacy', label: 'EU privacy (GDPR signals)', grade: pr.grade, summary: pr.summary, checks });
+    const checks: CheckItem[] = pr.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail, severity: c.severity }));
+    categories.push({ key: 'privacy', group: 'privacy', label: 'EU privacy (GDPR signals)', grade: pr.grade, score: pr.score, summary: pr.summary, checks });
   }
 
   // Development-mode build artifacts. Worded carefully: a static mirror of a
@@ -621,14 +634,14 @@ export function combineReport(inp: ReportInputs): Report {
 
   if (inp.visibility) {
     const v = inp.visibility;
-    const checks = v.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail }));
-    categories.push({ key: 'visibility', group: 'visibility', label: 'AI & search visibility', grade: v.grade, summary: v.summary, checks });
+    const checks = v.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail, severity: c.severity }));
+    categories.push({ key: 'visibility', group: 'visibility', label: 'AI & search visibility', grade: v.grade, score: v.score, summary: v.summary, checks });
   }
 
   if (inp.fundamentals) {
     const f = inp.fundamentals;
-    const checks: CheckItem[] = f.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.pass ? undefined : 'missing from the page' }));
-    categories.push({ key: 'fundamentals', group: 'basics', label: 'Fundamentals', grade: f.grade, summary: f.summary, checks });
+    const checks: CheckItem[] = f.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.pass ? undefined : 'missing from the page', severity: c.severity }));
+    categories.push({ key: 'fundamentals', group: 'basics', label: 'Fundamentals', grade: f.grade, score: f.score, summary: f.summary, checks });
   }
   if (inp.lighthouse) {
     const l = inp.lighthouse;

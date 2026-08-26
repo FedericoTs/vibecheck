@@ -200,3 +200,58 @@ describe('an unreachable probe is not a pass', () => {
     expect(r.issueCount).toBe(0);
   });
 });
+
+/**
+ * The engine computes a 0-100 for most categories and used to drop it on the
+ * floor at ReportCategory, leaving the UI five buckets where there were a
+ * hundred. These pin the pass-through, because a silently-missing number just
+ * looks like a category that chose not to score itself.
+ */
+describe('category score + severity pass-through', () => {
+  it('carries the scanner 0-100 onto the category, not just the letter', () => {
+    const r = combineReport({
+      headers: hdr({ grade: 'C', score: 63 }),
+    } as unknown as ReportInputs);
+    const cat = r.categories.find((c) => c.key === 'headers')!;
+    expect(cat.grade).toBe('C');
+    expect(cat.score).toBe(63);
+  });
+
+  it('keeps two same-letter categories distinguishable by score', () => {
+    const low = combineReport({ headers: hdr({ grade: 'C', score: 61 }) } as unknown as ReportInputs);
+    const high = combineReport({ headers: hdr({ grade: 'C', score: 74 }) } as unknown as ReportInputs);
+    const a = low.categories.find((c) => c.key === 'headers')!;
+    const b = high.categories.find((c) => c.key === 'headers')!;
+    expect(a.grade).toBe(b.grade);
+    expect(a.score).not.toBe(b.score);
+  });
+
+  it('keeps severity on a NON-security check, so it can be ranked', () => {
+    const r = combineReport({
+      fundamentals: {
+        host: 'my.app',
+        grade: 'C',
+        score: 70,
+        summary: 'some gaps',
+        checks: [{ key: 'title', label: 'Page title', pass: false, severity: 'medium' }],
+      },
+    } as unknown as ReportInputs);
+    const cat = r.categories.find((c) => c.key === 'fundamentals')!;
+    expect(cat.checks[0].severity).toBe('medium');
+  });
+
+  it('still refuses to let a non-security severity touch the security counts', () => {
+    const r = combineReport({
+      fundamentals: {
+        host: 'my.app',
+        grade: 'F',
+        score: 10,
+        summary: 'bad',
+        checks: [{ key: 'title', label: 'Page title', pass: false, severity: 'high' }],
+      },
+    } as unknown as ReportInputs);
+    // basics is not a security group: it must not move issueCount or severityCounts.
+    expect(r.issueCount).toBe(0);
+    expect(severityCounts(r).high).toBe(0);
+  });
+});
