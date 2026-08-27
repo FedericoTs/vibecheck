@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSaved, newSlug, sanitize, SAVED_VERSION, RETENTION_DAYS } from './report-store';
+import { buildSaved, newSlug, sanitize, blobToken, SAVED_VERSION, RETENTION_DAYS } from './report-store';
 import type { Report } from './scan/report';
 
 const report = (over: Partial<Report> = {}): Report => ({
@@ -112,5 +112,28 @@ describe('buildSaved', () => {
   it('carries the skipped list, so a partial scan cannot read as a clean one', () => {
     const saved = buildSaved({ slug: 'abc', host: 'my.app', report: report(), skipped: ['headers', 'paths'], now });
     expect(saved.skipped).toEqual(['headers', 'paths']);
+  });
+});
+
+/**
+ * Connecting a Blob store lets you set an env-var PREFIX, so the token is not
+ * always called BLOB_READ_WRITE_TOKEN. Hardcoding the default name made a
+ * correctly-configured store read as "saving is off" with nothing to say why.
+ */
+describe('blobToken', () => {
+  it('prefers the default name', () => {
+    expect(blobToken({ BLOB_READ_WRITE_TOKEN: 'a', OTHER_READ_WRITE_TOKEN: 'b' } as unknown as NodeJS.ProcessEnv)).toBe('a');
+  });
+
+  it('accepts a prefixed token when the default is absent', () => {
+    expect(blobToken({ VIBECHECK_READ_WRITE_TOKEN: 'b' } as unknown as NodeJS.ProcessEnv)).toBe('b');
+  });
+
+  it('ignores empty values rather than treating them as configured', () => {
+    expect(blobToken({ BLOB_READ_WRITE_TOKEN: '' } as unknown as NodeJS.ProcessEnv)).toBeUndefined();
+  });
+
+  it('is undefined when nothing is set, so saving stays off', () => {
+    expect(blobToken({} as unknown as NodeJS.ProcessEnv)).toBeUndefined();
   });
 });

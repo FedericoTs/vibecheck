@@ -49,9 +49,27 @@ export interface SavedReport {
   categories: Report['categories'];
 }
 
+/**
+ * Find the Blob token, whatever Vercel decided to call it.
+ *
+ * The default name is BLOB_READ_WRITE_TOKEN, but connecting a store lets you set
+ * an environment-variable PREFIX, which produces `<PREFIX>_READ_WRITE_TOKEN`
+ * instead. Hardcoding the default name means a store that is correctly created,
+ * correctly connected and correctly deployed still reads as "saving is off",
+ * with nothing in the logs to say why. So: take the default if it is there, and
+ * otherwise accept any single *_READ_WRITE_TOKEN the environment offers.
+ */
+export function blobToken(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if (env.BLOB_READ_WRITE_TOKEN) return env.BLOB_READ_WRITE_TOKEN;
+  for (const [k, v] of Object.entries(env)) {
+    if (k.endsWith('_READ_WRITE_TOKEN') && v) return v;
+  }
+  return undefined;
+}
+
 /** Storage is optional: with no Blob token configured, saving is simply off. */
 export function savingEnabled(): boolean {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  return Boolean(blobToken());
 }
 
 /**
@@ -121,6 +139,7 @@ export function buildSaved(opts: {
 
 export async function saveReport(saved: SavedReport): Promise<string> {
   const { url } = await put(key(saved.slug), JSON.stringify(saved), {
+    token: blobToken(),
     access: 'public', // unguessable slug is the control; see rule 3
     contentType: 'application/json',
     addRandomSuffix: false,
@@ -133,7 +152,7 @@ export async function saveReport(saved: SavedReport): Promise<string> {
 export async function loadReport(slug: string): Promise<SavedReport | null> {
   if (!/^[a-z2-9]{16,64}$/.test(slug)) return null;
   try {
-    const meta = await head(key(slug));
+    const meta = await head(key(slug), { token: blobToken() });
     const res = await fetch(meta.url, { cache: 'no-store' });
     if (!res.ok) return null;
     const data = (await res.json()) as SavedReport;

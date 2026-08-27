@@ -6,6 +6,17 @@ import type { Report } from '@/lib/scan/report';
 
 export const runtime = 'nodejs';
 
+/**
+ * Read-only health check, so "saving is off" can be diagnosed without guessing.
+ *
+ * Reports whether a token was found and the NAME of the variable it came from —
+ * never the value, and never anything else from the environment.
+ */
+export function GET(): Response {
+  const name = Object.keys(process.env).find((k) => k.endsWith('_READ_WRITE_TOKEN'));
+  return NextResponse.json({ saving: savingEnabled(), tokenVar: name ?? null });
+}
+
 /** A saved report is a document, not a payload — cap it so nobody stores a novel. */
 const MAX_BODY = 512_000;
 
