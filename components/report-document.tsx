@@ -153,9 +153,9 @@ export function VerdictBlock({ grade, verdict }: { grade: Grade; verdict: Verdic
  */
 export function PillarScorecard({ pillars }: { pillars: PillarView[] }) {
   return (
-    <div className="space-y-6">
+    <div className="columns-1 gap-4 lg:columns-2">
       {pillars.map((p) => (
-        <section key={p.group} className="border border-line bg-panel">
+        <section key={p.group} className="mb-4 break-inside-avoid border border-line bg-panel">
           <header className="flex items-start justify-between gap-4 border-b border-line-soft px-4 py-3">
             <div className="min-w-0">
               <h3 className="font-display text-sm font-semibold tracking-tight text-ink">{p.label}</h3>
@@ -252,12 +252,14 @@ export function PriorityQueue({
   const hidden = findings.length - shown.length;
 
   return (
-    <div className="space-y-3">
+    // Two columns once there is room. The rank badge on every card keeps the
+    // order explicit, so reading left-to-right does not lose the queue.
+    <div className="grid gap-3 xl:grid-cols-2">
       {shown.map((f) => (
         <FindingCard key={`${f.category.key}-${f.check.label}`} finding={f} fix={fixFor(f.category.key, f.check)} />
       ))}
       {hidden > 0 && (
-        <p className="font-mono text-xs text-faint">
+        <p className="font-mono text-xs text-faint xl:col-span-2">
           + {hidden} more below, in the full audit.
         </p>
       )}
@@ -358,7 +360,7 @@ export function ClearedPanel({ lines }: { lines: string[] }) {
   if (lines.length === 0) return null;
 
   return (
-    <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+    <ul className="grid gap-x-8 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
       {lines.map((line) => (
         <li key={line} className="flex gap-2.5 text-sm leading-relaxed text-muted">
           <span className="mt-px font-mono text-sm text-safe" aria-hidden>

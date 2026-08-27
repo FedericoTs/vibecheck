@@ -310,10 +310,15 @@ function ProofHeadline({ proof }: { proof: Proof }) {
 }
 
 function CategoryList({ categories }: { categories: ReportCategory[] }) {
+  // Columns rather than a grid: category cards vary a lot in height (Security
+  // has eleven, Fundamentals has one), and columns balance that automatically
+  // where a grid would leave one side ragged.
   return (
-    <div className="space-y-3">
+    <div className="columns-1 gap-3 lg:columns-2">
       {categories.map((c) => (
-        <CategoryCard key={c.key} c={c} />
+        <div key={c.key} className="mb-3 break-inside-avoid">
+          <CategoryCard c={c} />
+        </div>
       ))}
     </div>
   );
@@ -954,7 +959,15 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-5 py-10 sm:py-16">
+    // The form is one input and reads best narrow; the report is a ~79-check
+    // document and was being squeezed through the same 672px column, which is
+    // why it felt like a stack of cards instead of a page. Width now follows
+    // what is actually on screen.
+    <main
+      className={`mx-auto w-full px-5 py-10 sm:py-16 ${
+        report || repoResult ? 'max-w-7xl' : 'max-w-2xl'
+      }`}
+    >
       {/* status bar — doubles as the way home once a result has replaced the form */}
       <div className="mb-14 flex items-center justify-between kicker">
         {report || repoResult ? (
@@ -1253,10 +1266,10 @@ export default function Home() {
           )}
 
           {/* the grade — the headline when there is nothing proven to show */}
-          <div className={`${proof ? 'mt-4 ' : ''}border bg-panel ${report.issueCount > 0 ? 'border-danger/40' : 'border-safe/40'}`}>
-            <div className="flex flex-col items-center gap-5 p-6 text-center sm:flex-row sm:items-center sm:gap-7 sm:text-left">
+          <div className={`${proof ? 'mt-4 ' : ''}border bg-panel lg:flex lg:items-stretch ${report.issueCount > 0 ? 'border-danger/40' : 'border-safe/40'}`}>
+            <div className="flex flex-col items-center gap-5 p-6 text-center sm:flex-row sm:items-center sm:gap-7 sm:text-left lg:flex-1">
               <ScoreDial grade={report.overallGrade} />
-              <div className="flex min-w-0 flex-1 flex-col justify-center">
+              <div className="flex min-w-0 max-w-2xl flex-1 flex-col justify-center">
                 <p className="kicker mb-2">{skipped.length > 0 ? 'Security grade · provisional' : 'Security grade'}</p>
                 {/* A grade computed from a partial scan is not the same claim as
                     a grade computed from a whole one. Rate limiting WILL fire at
@@ -1279,7 +1292,7 @@ export default function Home() {
               </div>
             </div>
             {/* one honest metric row, not a dashboard */}
-            <div className="flex divide-x divide-line border-t border-line">
+            <div className="flex divide-x divide-line border-t border-line lg:w-64 lg:shrink-0 lg:flex-col lg:divide-x-0 lg:divide-y lg:border-l lg:border-t-0">
               <div className="flex-1 px-5 py-3">
                 <p className="font-mono text-lg font-semibold text-safe">{report.passed}</p>
                 <p className="kicker text-faint">passed</p>
