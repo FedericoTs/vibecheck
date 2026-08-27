@@ -77,7 +77,16 @@ export default function LegalPage() {
             <span className="text-faint">·</span>
             <span>
               We store <span className="text-ink">nothing about your scan</span> — not the URL you entered, not your
-              keys, not the findings.
+              keys, not the findings — <span className="text-ink">unless you press Save</span>.
+            </span>
+          </li>
+          <li className="flex gap-2">
+            <span className="text-faint">·</span>
+            <span>
+              If you do press Save, we store that one report: the site&rsquo;s hostname, the grade, the counts and the
+              findings, at an <span className="text-ink">unlisted link</span> nothing on this site links to or indexes.
+              We never store your keys. It is deleted automatically after 90 days, and anyone who has the link can read
+              it — so send it to your team rather than posting it.
             </span>
           </li>
           <li className="flex gap-2">

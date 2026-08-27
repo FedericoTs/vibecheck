@@ -593,6 +593,39 @@ export default function Home() {
   const clearedLines = useMemo(() => (report ? cleared(report) : []), [report]);
   // Severity shape travels with the share link so the card can say "5 critical"
   // instead of only "7 issues". Counted the same way the report counts them.
+  // Saving is the one thing vibecheck does that leaves something behind, so it
+  // is opt-in, gated on an explicit authorisation tick, and never happens as a
+  // side effect of scanning.
+  const [saving, setSaving] = useState(false);
+  const [savedSlug, setSavedSlug] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [authorized, setAuthorized] = useState(false);
+
+  const saveReportNow = async () => {
+    if (!report || !authorized) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      const res = await fetch('/api/report', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          report,
+          host: appUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, ''),
+          skipped,
+          authorized: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? 'Could not save');
+      setSavedSlug(data.slug);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Could not save that report');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const shareStats = useMemo(() => {
     if (!report) return { t: 0, c: 0, h: 0 };
     const sev = severityCounts(report);
@@ -786,7 +819,7 @@ export default function Home() {
           : `Scanned my app with vibecheck — ${report.passed} checks passed, no public exposure found. It looks at what a stranger can already read: exposed database tables, keys in the bundle, dev builds shipped live, source maps, hidden text aimed at AI. Free, no signup.`
         : `vibecheck found ${n} issue${n === 1 ? '' : 's'} in my AI-built app (graded ${report.overallGrade}). It shows what a stranger can already read — exposed tables, keys in the bundle, dev builds. Free, no signup, and it hands you the fix.`;
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
-  }, [report, skipped]);
+  }, [report, skipped, shareStats]);
 
   function share() {
     if (!report) return;
@@ -1633,6 +1666,59 @@ export default function Home() {
             >
               {mdDownloaded ? '✓ report.md downloaded' : '↓ download the report as markdown (for your AI agent)'}
             </button>
+            {/*
+              Save. Everything above this point happens and is forgotten; this is
+              the one action that writes the report down, so it says so, asks the
+              person to confirm they are allowed to test the site, and hands back
+              an unlisted link rather than publishing anything.
+            */}
+            <div className="border border-line bg-panel p-5">
+              <p className="kicker mb-2">Save this report</p>
+              {savedSlug ? (
+                <div className="space-y-3">
+                  <p className="text-sm leading-relaxed text-muted">
+                    Saved. This link opens the full report, including the commands that prove each finding.
+                    Anyone who has it can read it, so send it to your team rather than posting it.
+                  </p>
+                  <a
+                    href={`/report/${savedSlug}`}
+                    className="block truncate border border-safe/40 bg-canvas px-3 py-2 font-mono text-xs text-safe transition hover:border-safe"
+                  >
+                    /report/{savedSlug}
+                  </a>
+                  <p className="font-mono text-[11px] text-faint">
+                    Deleted automatically after 90 days — a security report is true about a moment.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="max-w-3xl text-sm leading-relaxed text-muted">
+                    Nothing about this scan has been stored. Saving writes the report to an unlisted link you can
+                    send to your team or come back to later — the findings and the proof commands, never your keys.
+                  </p>
+                  <label className="flex max-w-3xl cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-muted">
+                    <input
+                      type="checkbox"
+                      checked={authorized}
+                      onChange={(e) => setAuthorized(e.target.checked)}
+                      className="mt-0.5 shrink-0 accent-safe"
+                    />
+                    <span>
+                      I own this site or am authorised to test it, and I understand anyone with the link can read
+                      the report.
+                    </span>
+                  </label>
+                  <button
+                    onClick={saveReportNow}
+                    disabled={!authorized || saving}
+                    className="w-full border border-line bg-panel px-5 py-3 font-mono text-xs font-medium uppercase tracking-wider text-muted transition enabled:hover:border-muted enabled:hover:text-ink disabled:opacity-40"
+                  >
+                    {saving ? 'saving…' : '⬒ save and get a private link'}
+                  </button>
+                  {saveError && <p className="font-mono text-xs text-warn">{saveError}</p>}
+                </div>
+              )}
+            </div>
             {/*
               Share. The reason people do not post a security result is the fear
               of pointing strangers at their app — so show them the exact card
