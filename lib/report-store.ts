@@ -169,7 +169,8 @@ export async function saveReport(saved: SavedReport): Promise<string> {
     access: 'private',
     contentType: 'application/json',
     addRandomSuffix: false,
-    cacheControlMaxAge: 60 * 60,
+    // Short, because the only thing that invalidates a report is deletion.
+    cacheControlMaxAge: 60,
   });
   return url;
 }
@@ -178,7 +179,10 @@ export async function saveReport(saved: SavedReport): Promise<string> {
 export async function loadReport(slug: string): Promise<SavedReport | null> {
   if (!/^[a-z2-9]{16,64}$/.test(slug)) return null;
   try {
-    const res = await get(key(slug), { access: 'private', token: blobToken() });
+    // useCache:false costs a slower read and buys correctness: with the CDN
+    // cache in play a deleted report kept serving 200 for up to an hour, which
+    // makes 'the link stops working immediately' a lie.
+    const res = await get(key(slug), { access: 'private', token: blobToken(), useCache: false });
     // 304 carries no body; we never send a conditional request, so treat any
     // bodyless response as a miss rather than trusting a partial read.
     if (!res || res.statusCode !== 200 || !res.stream) return null;

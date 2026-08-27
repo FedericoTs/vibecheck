@@ -7,6 +7,13 @@ import { SavedReportView } from '@/components/saved-report';
 type Params = Promise<{ slug: string }>;
 
 /**
+ * Never cached. A saved report can be revoked at any moment, and a cached render
+ * would keep answering 200 for a link its owner has already destroyed.
+ */
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+/**
  * A saved report is UNLISTED, not public.
  *
  * noindex keeps it out of search, and nothing on the site enumerates saved
