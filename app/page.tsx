@@ -7,7 +7,7 @@ import { scanSupabase } from '@/lib/scan/supabase';
 import { scanFirebase, extractCollections, extractDatabases, firebaseConfigFromText, type FirebaseConfig } from '@/lib/scan/firebase';
 import { unzipSync } from 'fflate';
 import { extractScannableText, analyzeBinaryText } from '@/lib/scan/binary';
-import { combineReport, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
+import { combineReport, severityCounts, type ReportInputs, type ReportCategory, type CheckItem } from '@/lib/scan/report';
 import type { CheckEvidence } from '@/lib/scan/evidence';
 import { buildScanOutcome, buildRepoOutcome, nextCountState } from '@/lib/scan/telemetry';
 import { CATALOGUE_CLAIM } from '@/lib/scan/catalogue';
@@ -591,6 +591,13 @@ export default function Home() {
   const undetermined = useMemo(() => (report ? unknowns(report) : []), [report]);
   const summary = useMemo(() => (report ? verdict(report) : null), [report]);
   const clearedLines = useMemo(() => (report ? cleared(report) : []), [report]);
+  // Severity shape travels with the share link so the card can say "5 critical"
+  // instead of only "7 issues". Counted the same way the report counts them.
+  const shareStats = useMemo(() => {
+    if (!report) return { t: 0, c: 0, h: 0 };
+    const sev = severityCounts(report);
+    return { t: report.total, c: sev.critical, h: sev.high };
+  }, [report]);
   // The key the probe actually used — typed or auto-discovered — so the
   // reproduction we print is the request that really ran.
   const [probeKey, setProbeKey] = useState('');
@@ -767,7 +774,7 @@ export default function Home() {
     // though in practice `report` is null there, so this returns '#'.
     if (!report || typeof window === 'undefined') return '#';
     const partial = skipped.length;
-    const url = `${window.location.origin}/r?g=${report.overallGrade}&i=${report.issueCount}&p=${report.passed}&s=${partial}`;
+    const url = `${window.location.origin}/r?g=${report.overallGrade}&i=${report.issueCount}&p=${report.passed}&s=${partial}&t=${shareStats.t}&c=${shareStats.c}&h=${shareStats.h}`;
     const n = report.issueCount;
     // The zero-issue line cannot say "no public exposure found" when checks did
     // not run: zero issues then means we did not look, and this text goes out
@@ -786,7 +793,7 @@ export default function Home() {
     track('result_shared', { grade: report.overallGrade });
     // A shareable link that unfurls into the OG card — grade + issue count only,
     // never the host, key, or findings.
-    const url = `${window.location.origin}/r?g=${report.overallGrade}&i=${report.issueCount}&p=${report.passed}&s=${skipped.length}`;
+    const url = `${window.location.origin}/r?g=${report.overallGrade}&i=${report.issueCount}&p=${report.passed}&s=${skipped.length}&t=${shareStats.t}&c=${shareStats.c}&h=${shareStats.h}`;
     navigator.clipboard?.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
@@ -1639,7 +1646,7 @@ export default function Home() {
               </div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={`/api/og?g=${report.overallGrade}&i=${report.issueCount}&p=${report.passed}&s=${skipped.length}`}
+                src={`/api/og?g=${report.overallGrade}&i=${report.issueCount}&p=${report.passed}&s=${skipped.length}&t=${shareStats.t}&c=${shareStats.c}&h=${shareStats.h}`}
                 alt={`Preview of the card that will appear when you share: grade ${report.overallGrade}, ${report.issueCount} issue${report.issueCount === 1 ? '' : 's'}`}
                 width={1200}
                 height={630}

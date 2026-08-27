@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-type SP = Promise<{ g?: string; i?: string; p?: string; s?: string }>;
+type SP = Promise<{ g?: string; i?: string; p?: string; s?: string; t?: string; c?: string; h?: string }>;
 
-function parse(sp: { g?: string; i?: string; p?: string; s?: string }) {
+function parse(sp: { g?: string; i?: string; p?: string; s?: string; t?: string; c?: string; h?: string }) {
   const g = (sp.g ?? 'F').toUpperCase();
   const grade = ['A', 'B', 'C', 'D', 'F'].includes(g) ? g : 'F';
   const issues = Math.max(0, Math.min(999, parseInt(sp.i ?? '0', 10) || 0));
@@ -13,7 +13,12 @@ function parse(sp: { g?: string; i?: string; p?: string; s?: string }) {
   // Checks that could not run. A shared page is a public claim, so zero issues
   // on a partial scan must not unfurl as "no public exposure found".
   const skipped = Math.max(0, Math.min(99, parseInt(sp.s ?? '0', 10) || 0));
-  return { grade, issues, passed, skipped };
+  // Depth of the scan and the shape of the worst of it. These make the card a
+  // result worth posting rather than a letter with no context behind it.
+  const total = Math.max(0, Math.min(999, parseInt(sp.t ?? '0', 10) || 0));
+  const critical = Math.max(0, Math.min(99, parseInt(sp.c ?? '0', 10) || 0));
+  const high = Math.max(0, Math.min(99, parseInt(sp.h ?? '0', 10) || 0));
+  return { grade, issues, passed, skipped, total, critical, high };
 }
 
 function tone(grade: string): string {
@@ -23,7 +28,7 @@ function tone(grade: string): string {
 }
 
 export async function generateMetadata({ searchParams }: { searchParams: SP }): Promise<Metadata> {
-  const { grade, issues, passed, skipped } = parse(await searchParams);
+  const { grade, issues, passed, skipped, total, critical, high } = parse(await searchParams);
   const title = `This app scored ${grade} on vibecheck`;
   const description =
     issues > 0
@@ -33,7 +38,7 @@ export async function generateMetadata({ searchParams }: { searchParams: SP }): 
         : passed > 0
           ? `${passed} checks passed — no public exposure found. Check yours — it's free.`
           : "Check yours — it's free.";
-  const og = `/api/og?g=${grade}&i=${issues}&p=${passed}&s=${skipped}`;
+  const og = `/api/og?g=${grade}&i=${issues}&p=${passed}&s=${skipped}&t=${total}&c=${critical}&h=${high}`;
   return {
     title,
     description,

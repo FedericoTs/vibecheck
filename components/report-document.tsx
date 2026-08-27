@@ -254,7 +254,7 @@ export function PriorityQueue({
   return (
     // Two columns once there is room. The rank badge on every card keeps the
     // order explicit, so reading left-to-right does not lose the queue.
-    <div className="grid gap-3 xl:grid-cols-2">
+    <div className="grid items-start gap-3 xl:grid-cols-2">
       {shown.map((f) => (
         <FindingCard key={`${f.category.key}-${f.check.label}`} finding={f} fix={fixFor(f.category.key, f.check)} />
       ))}

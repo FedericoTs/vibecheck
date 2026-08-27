@@ -101,6 +101,20 @@ export function GET(req: Request): ImageResponse {
   // found" from a partial scan is a claim we did not earn — so the card says
   // outright that it is partial rather than quietly rounding up to clean.
   const skipped = Math.max(0, Math.min(99, parseInt(searchParams.get('s') ?? '0', 10) || 0));
+  // Depth and shape of the result. A grade plus "3 issues" says how the app did;
+  // these say how hard we looked and how bad the worst of it is, which is what
+  // makes the card worth posting rather than just worth glancing at.
+  const total = Math.max(0, Math.min(999, parseInt(searchParams.get('t') ?? '0', 10) || 0));
+  const critical = Math.max(0, Math.min(99, parseInt(searchParams.get('c') ?? '0', 10) || 0));
+  const high = Math.max(0, Math.min(99, parseInt(searchParams.get('h') ?? '0', 10) || 0));
+
+  // Built as one flat list of strings: satori rejects a div with several children
+  // unless it is explicitly display:flex, and each chip below is its own node.
+  const stats: string[] = [];
+  if (total > 0) stats.push(`${total} checks run`);
+  if (passed > 0) stats.push(`${passed} passed`);
+  if (critical > 0) stats.push(`${critical} critical`);
+  if (high > 0) stats.push(`${high} high`);
   const issueText =
     issues === 0 ? (skipped > 0 ? 'No issues in what ran' : 'No issues found') : `${issues} issue${issues === 1 ? '' : 's'} found`;
 
@@ -122,7 +136,24 @@ export function GET(req: Request): ImageResponse {
               {/* One template literal, not `{passed} checks passed` — satori
                   counts that as two child nodes and rejects any div holding
                   more than one without an explicit display. */}
-              {passed > 0 && <div style={{ fontSize: 34, marginTop: 12 }}>{`${passed} checks passed`}</div>}
+              {stats.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', marginTop: 14 }}>
+                  {stats.map((stat, i) => (
+                    <div key={stat} style={{ display: 'flex', alignItems: 'center' }}>
+                      {i > 0 && <div style={{ display: 'flex', color: LINE, margin: '0 14px', fontSize: 30 }}>·</div>}
+                      <div
+                        style={{
+                          display: 'flex',
+                          fontSize: 32,
+                          color: stat.endsWith('critical') ? DANGER : stat.endsWith('high') ? '#e0a33e' : INK,
+                        }}
+                      >
+                        {stat}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {skipped > 0 && (
                 <div style={{ fontSize: 26, color: '#e0a33e', marginTop: 10 }}>
                   {`partial scan — ${skipped} check${skipped === 1 ? '' : 's'} could not run`}
