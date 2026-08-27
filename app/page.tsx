@@ -1344,16 +1344,19 @@ export default function Home() {
                 <p className="kicker text-faint">to fix</p>
               </div>
               <div className="flex-1 px-5 py-3">
-                {/* Both numbers, because either alone misleads. The per-app count
-                    is the honest one and stays the headline; without the
-                    catalogue beside it the tool reads as a third as thorough as
-                    it is, since checks for a backend an app does not have
-                    correctly never run. */}
+                {/* This used to read "{total} / {catalogue} checks run", which was
+                    not true. The catalogue counts every distinct thing we know
+                    how to look for; a report line is a RESULT, and a clean area
+                    collapses many probes into one — seventeen secret patterns
+                    become a single "no secrets found" line. As a fraction it
+                    implied dozens of checks had been skipped when they had all
+                    run. Both numbers still earn their place, just not as a
+                    ratio. */}
                 <p className="font-mono text-lg font-semibold text-muted">
                   {report.total}
-                  <span className="text-sm font-normal text-faint"> / {CATALOGUE_CLAIM}</span>
+                  <span className="text-sm font-normal text-faint"> / {CATALOGUE_CLAIM} catalogue</span>
                 </p>
-                <p className="kicker text-faint">checks run</p>
+                <p className="kicker text-faint">results</p>
               </div>
             </div>
           </div>
@@ -1397,7 +1400,7 @@ export default function Home() {
               title="Every area we measured"
               note="Security is the only pillar that sets your grade. The rest are reported beside it so a slow page or a missing meta tag can never make an app look insecure, or hide that it is."
             />
-            <PillarScorecard pillars={pillarViews} />
+            <PillarScorecard pillars={pillarViews} fixFor={fixFor} />
           </div>
 
           {/* ── 02 · the priority queue ─────────────────────────────────

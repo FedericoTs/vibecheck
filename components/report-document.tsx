@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * The report as a document.
  *
@@ -17,6 +19,8 @@
  *      goes through the lookup maps below or it silently vanishes in production.
  */
 
+import { useState } from 'react';
+import { categoryBlurb } from '@/lib/scan/category-info';
 import type { Grade } from '@/lib/scan/types';
 import type { Severity, ReportCategory, CheckItem } from '@/lib/scan/report';
 import type { PillarView, RankedFinding, Verdict } from '@/lib/scan/insights';
@@ -108,8 +112,17 @@ export function ScanHeader({
     <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-line pb-4 font-mono text-xs text-faint">
       <span className="text-ink">{host}</span>
       <span>scanned {scannedAt}</span>
+      {/* Deliberately NOT "{total} of {catalogue} checks ran". Those two numbers
+          count different things: the catalogue counts every distinct thing we
+          know how to look for, while a report line is a RESULT — and a clean
+          area collapses many probes into one. Seventeen secret patterns become
+          a single "no secrets found" line. Presenting them as a fraction implied
+          dozens of checks had been skipped when they had all run. */}
       <span>
-        {total} of {catalogue} checks ran
+        {total} results
+      </span>
+      <span>
+        from a {catalogue}-check catalogue
       </span>
       {partial ? <span className="text-warn">{partial} could not run</span> : null}
     </div>
@@ -151,7 +164,13 @@ export function VerdictBlock({ grade, verdict }: { grade: Grade; verdict: Verdic
  * The pillar carries the worst grade in it — the same rule as the headline —
  * and each category shows its own honest number underneath.
  */
-export function PillarScorecard({ pillars }: { pillars: PillarView[] }) {
+export function PillarScorecard({
+  pillars,
+  fixFor,
+}: {
+  pillars: PillarView[];
+  fixFor?: (categoryKey: string, check: CheckItem) => string;
+}) {
   return (
     <div className="columns-1 gap-4 lg:columns-2">
       {pillars.map((p) => (
@@ -178,7 +197,7 @@ export function PillarScorecard({ pillars }: { pillars: PillarView[] }) {
 
           <ul className="divide-y divide-line-soft">
             {p.categories.map((c) => (
-              <CategoryScoreRow key={c.key} category={c} />
+              <CategoryScoreRow key={c.key} category={c} fixFor={fixFor} />
             ))}
           </ul>
         </section>
@@ -194,12 +213,33 @@ export function PillarScorecard({ pillars }: { pillars: PillarView[] }) {
  * served or it is not — and drawing them a 0 or 100 bar would dress a yes/no up
  * as a measurement.
  */
-function CategoryScoreRow({ category }: { category: ReportCategory }) {
+function CategoryScoreRow({
+  category,
+  fixFor,
+}: {
+  category: ReportCategory;
+  fixFor?: (categoryKey: string, check: CheckItem) => string;
+}) {
+  const [open, setOpen] = useState(false);
   const failing = category.checks.filter((c) => !c.pass && c.graded !== false).length;
   const scored = typeof category.score === 'number';
+  const canOpen = category.checks.length > 0;
 
   return (
-    <li className="flex items-center gap-4 px-4 py-2.5">
+    <li>
+    <button
+      type="button"
+      onClick={() => canOpen && setOpen((v) => !v)}
+      aria-expanded={open}
+      disabled={!canOpen}
+      className="flex w-full items-center gap-4 px-4 py-2.5 text-left transition enabled:hover:bg-line-soft/50"
+    >
+      <span
+        className={`w-2 shrink-0 font-mono text-[10px] ${canOpen ? 'text-faint' : 'text-transparent'}`}
+        aria-hidden
+      >
+        {open ? '−' : '+'}
+      </span>
       <span className="min-w-0 flex-1 truncate text-sm text-muted">{category.label}</span>
 
       {scored ? (
@@ -225,6 +265,70 @@ function CategoryScoreRow({ category }: { category: ReportCategory }) {
       >
         {category.grade ?? '—'}
       </span>
+    </button>
+
+    {open && (
+      <div className="border-t border-line-soft bg-canvas/40 px-4 py-3">
+        {/* What we actually did, before what we found. "Exposed files: A" means
+            nothing until you say we asked the server for .env and it refused. */}
+        <p className="mb-3 max-w-3xl text-xs leading-relaxed text-faint">{categoryBlurb(category.key)}</p>
+        <ul className="space-y-2.5">
+          {[...category.checks]
+            .sort((a, b) => Number(a.pass) - Number(b.pass))
+            .map((c) => (
+              <CheckDetail
+                key={c.label}
+                check={c}
+                fix={!c.pass && c.graded !== false && fixFor ? fixFor(category.key, c) : undefined}
+              />
+            ))}
+        </ul>
+      </div>
+    )}
+    </li>
+  );
+}
+
+/**
+ * One check, opened up.
+ *
+ * A passing row carries its own detail for a reason: it is where the collapsed
+ * work becomes visible. "No exposed AI or MCP endpoints" is one line in the
+ * report but seven probes underneath, and the only place a reader can see that
+ * is here.
+ */
+function CheckDetail({ check, fix }: { check: CheckItem; fix?: string }) {
+  const unknown = !check.pass && check.graded === false;
+  const glyph = check.pass ? '✓' : unknown ? '!' : '✗';
+  const tone = check.pass ? 'text-safe' : unknown ? 'text-warn' : 'text-danger';
+
+  return (
+    <li className="flex gap-2.5">
+      <span className={`mt-px shrink-0 font-mono text-xs ${tone}`} aria-hidden>
+        {glyph}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs leading-relaxed text-ink">
+          {check.label}
+          {unknown && (
+            <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-warn">not graded</span>
+          )}
+          {check.severity && !check.pass && !unknown && (
+            <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-faint">{check.severity}</span>
+          )}
+        </p>
+        {check.detail && <p className="mt-0.5 font-mono text-[11px] leading-relaxed text-faint">{check.detail}</p>}
+        {check.evidence && (
+          <pre className="mt-1.5 overflow-x-auto border border-line bg-canvas px-2.5 py-1.5 font-mono text-[11px] text-safe">
+            {check.evidence.command}
+          </pre>
+        )}
+        {fix && (
+          <p className="mt-1.5 text-xs leading-relaxed text-muted">
+            <span className="font-mono text-[10px] uppercase tracking-wider text-warn">Fix</span> {fix}
+          </p>
+        )}
+      </div>
     </li>
   );
 }

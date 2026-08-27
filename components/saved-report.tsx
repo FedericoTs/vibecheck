@@ -215,7 +215,7 @@ export function SavedReportView({ saved, retentionDays }: { saved: SavedReport; 
           title="Every area we measured"
           note="Security is the only pillar that sets the grade. The rest are reported beside it."
         />
-        <PillarScorecard pillars={pillarViews} />
+        <PillarScorecard pillars={pillarViews} fixFor={fixFor} />
       </div>
 
       {queue.length > 0 && (
