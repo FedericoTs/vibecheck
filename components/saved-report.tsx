@@ -22,6 +22,9 @@ const fmt = (iso: string) =>
 
 export function SavedReportView({ saved, retentionDays }: { saved: SavedReport; retentionDays: number }) {
   const [copied, setCopied] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleted, setDeleted] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   // Rebuild the shape the document components already know how to render, so a
   // saved report and a live one cannot drift apart visually.
@@ -62,6 +65,36 @@ export function SavedReportView({ saved, retentionDays }: { saved: SavedReport; 
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  // Revocation. Confirm first, because there is no undo and no second copy.
+  const removeReport = async () => {
+    if (!window.confirm('Delete this saved report? The link stops working immediately and this cannot be undone.')) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const res = await fetch(`/api/report?slug=${encodeURIComponent(saved.slug)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? 'Could not delete');
+      setDeleted(true);
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Could not delete that report');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (deleted) {
+    return (
+      <section className="border border-line bg-panel p-8">
+        <p className="kicker mb-2">Deleted</p>
+        <p className="font-display text-xl tracking-tight text-ink">This report is gone.</p>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
+          The link no longer works for anyone. Nothing about {saved.host} is stored any more. You can scan it again
+          at any time.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section>
@@ -149,6 +182,19 @@ export function SavedReportView({ saved, retentionDays }: { saved: SavedReport; 
           findings. The private link opens this full page, including the commands that prove each finding, so send it
           to your team rather than posting it. Anyone who has the link can read it.
         </p>
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line-soft pt-3">
+          <button
+            onClick={removeReport}
+            disabled={deleting}
+            className="font-mono text-[11px] uppercase tracking-wider text-faint transition hover:text-danger disabled:opacity-40"
+          >
+            {deleting ? 'deleting…' : 'delete this report'}
+          </button>
+          <span className="font-mono text-[11px] text-faint">
+            or leave it — it deletes itself after {retentionDays} days
+          </span>
+          {deleteError && <span className="font-mono text-[11px] text-warn">{deleteError}</span>}
+        </div>
       </div>
 
       <div className="mt-6">

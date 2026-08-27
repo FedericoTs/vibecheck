@@ -23,7 +23,7 @@
  * stats-only card instead of at this.
  */
 
-import { put, get } from '@vercel/blob';
+import { put, get, del } from '@vercel/blob';
 import type { Report } from './scan/report';
 
 /** Bumped when the stored shape changes, so an old blob can be rejected cleanly. */
@@ -190,4 +190,23 @@ export async function loadReport(slug: string): Promise<SavedReport | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Delete a saved report.
+ *
+ * The slug is the capability here, exactly as it is for reading: whoever holds
+ * the link can already see everything in the report, so letting them destroy it
+ * grants nothing new. The alternative — no way to revoke at all — is worse, and
+ * it is the case that actually matters: someone saves a report, the link ends up
+ * somewhere they did not intend, and without this they are stuck with it for
+ * ninety days.
+ *
+ * Idempotent by design. Deleting something already gone is a success, not an
+ * error, so a double-click cannot produce a scary message.
+ */
+export async function deleteReport(slug: string): Promise<boolean> {
+  if (!/^[a-z2-9]{16,64}$/.test(slug)) return false;
+  await del(key(slug), { token: blobToken() });
+  return true;
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { randomBytes } from 'node:crypto';
 import { rateLimitResponse } from '@/lib/rate-limit';
-import { buildSaved, newSlug, saveReport, savingEnabled } from '@/lib/report-store';
+import { buildSaved, deleteReport, newSlug, saveReport, savingEnabled } from '@/lib/report-store';
 import type { Report } from '@/lib/scan/report';
 
 export const runtime = 'nodejs';
@@ -89,5 +89,35 @@ export async function POST(request: Request): Promise<Response> {
       { error: 'Could not save that report', reason: reason || undefined },
       { status: 502 },
     );
+  }
+}
+
+/**
+ * Revoke a saved report.
+ *
+ * Deliberately gated on nothing but the slug. Anyone holding the link can
+ * already read the whole report, so being able to destroy it grants no access
+ * they did not have — while the absence of any revocation is a genuine problem:
+ * a link that ends up somewhere unintended would otherwise stand for ninety
+ * days with nothing its owner could do about it.
+ */
+export async function DELETE(request: Request): Promise<Response> {
+  const limited = rateLimitResponse(request.headers);
+  if (limited) return limited;
+
+  if (!savingEnabled()) {
+    return NextResponse.json({ error: 'Saving is not enabled on this deployment' }, { status: 503 });
+  }
+
+  const slug = new URL(request.url).searchParams.get('slug') ?? '';
+  try {
+    const ok = await deleteReport(slug);
+    if (!ok) return NextResponse.json({ error: 'Invalid slug' }, { status: 400 });
+    // Idempotent: deleting something already gone is a success.
+    return NextResponse.json({ deleted: true, slug });
+  } catch (e) {
+    const reason = e instanceof Error ? e.message.slice(0, 200) : '';
+    console.error('[report:delete]', reason);
+    return NextResponse.json({ error: 'Could not delete that report', reason: reason || undefined }, { status: 502 });
   }
 }
