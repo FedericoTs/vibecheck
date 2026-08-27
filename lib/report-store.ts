@@ -23,7 +23,7 @@
  * stats-only card instead of at this.
  */
 
-import { put, head } from '@vercel/blob';
+import { put, get } from '@vercel/blob';
 import type { Report } from './scan/report';
 
 /** Bumped when the stored shape changes, so an old blob can be rejected cleanly. */
@@ -154,10 +154,19 @@ export function buildSaved(opts: {
   };
 }
 
+/**
+ * Blobs are PRIVATE.
+ *
+ * Rule 3 said the unguessable slug was the control, and on a public store the
+ * stored JSON would also have been fetchable directly from its blob URL. Private
+ * is strictly better: the report can only be read by something holding the
+ * token, which means our own server, which means the only way to see a report is
+ * the page we render for it. The slug still guards that page.
+ */
 export async function saveReport(saved: SavedReport): Promise<string> {
   const { url } = await put(key(saved.slug), JSON.stringify(saved), {
     token: blobToken(),
-    access: 'public', // unguessable slug is the control; see rule 3
+    access: 'private',
     contentType: 'application/json',
     addRandomSuffix: false,
     cacheControlMaxAge: 60 * 60,
@@ -169,10 +178,12 @@ export async function saveReport(saved: SavedReport): Promise<string> {
 export async function loadReport(slug: string): Promise<SavedReport | null> {
   if (!/^[a-z2-9]{16,64}$/.test(slug)) return null;
   try {
-    const meta = await head(key(slug), { token: blobToken() });
-    const res = await fetch(meta.url, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const data = (await res.json()) as SavedReport;
+    const res = await get(key(slug), { access: 'private', token: blobToken() });
+    // 304 carries no body; we never send a conditional request, so treat any
+    // bodyless response as a miss rather than trusting a partial read.
+    if (!res || res.statusCode !== 200 || !res.stream) return null;
+    const text = await new Response(res.stream).text();
+    const data = JSON.parse(text) as SavedReport;
     if (data?.v !== SAVED_VERSION) return null;
     if (data.expiresAt && new Date(data.expiresAt).getTime() < Date.now()) return null;
     return data;
