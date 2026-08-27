@@ -60,11 +60,28 @@ export interface SavedReport {
  * otherwise accept any single *_READ_WRITE_TOKEN the environment offers.
  */
 export function blobToken(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  if (env.BLOB_READ_WRITE_TOKEN) return env.BLOB_READ_WRITE_TOKEN;
-  for (const [k, v] of Object.entries(env)) {
-    if (k.endsWith('_READ_WRITE_TOKEN') && v) return v;
-  }
-  return undefined;
+  const raw = env.BLOB_READ_WRITE_TOKEN
+    ? env.BLOB_READ_WRITE_TOKEN
+    : Object.entries(env).find(([k, v]) => k.endsWith('_READ_WRITE_TOKEN') && v)?.[1];
+  return raw ? clean(raw) : undefined;
+}
+
+/**
+ * Dashboard env editors take the value literally, and the snippet people copy
+ * from is written as KEY="value" — so a token pasted with its quotes still
+ * looks set, still passes every "is it configured" check, and fails only at the
+ * API with an opaque error. Strip the wrapping rather than make someone debug
+ * an invisible pair of quotes.
+ */
+function clean(value: string): string {
+  // Written without a regex on purpose: this file has now been mangled twice by
+  // shell escaping, and a backreference that silently loses its backslash still
+  // compiles and still "works" on the happy path.
+  const v = value.trim();
+  const first = v[0];
+  const isQuote = first === '"' || first === "'";
+  const wrapped = isQuote && v.length >= 2 && v[v.length - 1] === first;
+  return (wrapped ? v.slice(1, -1) : v).trim();
 }
 
 /** Storage is optional: with no Blob token configured, saving is simply off. */

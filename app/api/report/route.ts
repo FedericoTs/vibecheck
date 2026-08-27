@@ -79,7 +79,15 @@ export async function POST(request: Request): Promise<Response> {
     const saved = buildSaved({ slug, host, report, skipped, now: new Date() });
     await saveReport(saved);
     return NextResponse.json({ slug, expiresAt: saved.expiresAt });
-  } catch {
-    return NextResponse.json({ error: 'Could not save that report' }, { status: 502 });
+  } catch (e) {
+    // The message comes from the storage SDK, not from user input, and it is the
+    // difference between "the token is wrong" and "the store is full". Truncated,
+    // never a stack.
+    const reason = e instanceof Error ? e.message.slice(0, 200) : '';
+    console.error('[report:save]', reason);
+    return NextResponse.json(
+      { error: 'Could not save that report', reason: reason || undefined },
+      { status: 502 },
+    );
   }
 }

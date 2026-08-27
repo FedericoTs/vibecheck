@@ -137,3 +137,32 @@ describe('blobToken', () => {
     expect(blobToken({} as unknown as NodeJS.ProcessEnv)).toBeUndefined();
   });
 });
+
+/**
+ * A token pasted with the quotes from a KEY="value" snippet still looks set and
+ * passes every "is it configured" check, then fails at the API with an opaque
+ * error. Cheaper to strip it than to make someone debug invisible quotes.
+ */
+describe('token cleaning', () => {
+  const t = (v: string) => blobToken({ BLOB_READ_WRITE_TOKEN: v } as unknown as NodeJS.ProcessEnv);
+
+  it('strips wrapping double quotes', () => {
+    expect(t('"vercel_blob_rw_abc"')).toBe('vercel_blob_rw_abc');
+  });
+
+  it('strips wrapping single quotes', () => {
+    expect(t("'vercel_blob_rw_abc'")).toBe('vercel_blob_rw_abc');
+  });
+
+  it('strips stray whitespace and newlines', () => {
+    expect(t('  vercel_blob_rw_abc\n')).toBe('vercel_blob_rw_abc');
+  });
+
+  it('leaves a clean token untouched', () => {
+    expect(t('vercel_blob_rw_abc')).toBe('vercel_blob_rw_abc');
+  });
+
+  it('does not strip an unmatched leading quote, which is not a wrapper', () => {
+    expect(t('"vercel_blob_rw_abc')).toBe('"vercel_blob_rw_abc');
+  });
+});
