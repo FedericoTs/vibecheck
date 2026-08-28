@@ -255,3 +255,128 @@ describe('category score + severity pass-through', () => {
     expect(severityCounts(r).high).toBe(0);
   });
 });
+
+/**
+ * A site can miss every response header while exposing no data, no files, no
+ * routes and no keys. Telling its owner "anyone can read your data" is a false
+ * accusation, and a false accusation is the one thing this scanner must never
+ * make. Reported against a real site whose headers were genuinely weak and
+ * whose data was genuinely not reachable.
+ */
+describe('the verdict describes what was found, not just the letter', () => {
+  const headerFailure = (grade: 'D' | 'F'): ReportCategory => ({
+    key: 'headers',
+    group: 'security',
+    label: 'Security headers',
+    grade,
+    score: 21,
+    summary: 'weak',
+    checks: [
+      { label: 'Content-Security-Policy', pass: false, severity: 'high' },
+      { label: 'Strict-Transport-Security (HSTS)', pass: false, severity: 'high' },
+    ],
+  });
+
+  const exposedFile: ReportCategory = {
+    key: 'paths',
+    group: 'security',
+    label: 'Exposed files',
+    grade: 'F',
+    summary: 'leak',
+    checks: [{ label: '.env (environment secrets)', pass: false, severity: 'critical' }],
+  };
+
+  const build = (cats: ReportCategory[]): Report =>
+    combineReport({} as ReportInputs) && ({
+      overallGrade: 'F',
+      verdict: '',
+      issueCount: 0,
+      passed: 0,
+      total: 0,
+      categories: cats,
+    } as Report);
+
+  it('never claims data is readable when only headers failed', () => {
+    // Built through the real pipeline so the wording comes from combineReport.
+    const r = combineReport({
+      headers: {
+        host: 'x.com',
+        grade: 'F',
+        score: 21,
+        summary: 'weak',
+        missing: ['content-security-policy', 'strict-transport-security'],
+        checks: [
+          { key: 'content-security-policy', label: 'Content-Security-Policy', present: false, severity: 'high', note: '', fix: '' },
+          { key: 'strict-transport-security', label: 'HSTS', present: false, severity: 'high', note: '', fix: '' },
+        ],
+      },
+    } as unknown as ReportInputs);
+
+    expect(r.overallGrade).toBe('F');
+    expect(r.verdict).not.toMatch(/read your data|walk through the front door/i);
+    expect(r.verdict).toMatch(/nothing was exposed/i);
+  });
+
+  it('still says data is readable when something really was', () => {
+    const r = combineReport({
+      paths: {
+        host: 'x.com',
+        grade: 'F',
+        score: 0,
+        summary: 'leak',
+        findings: [{ path: '/.env', label: '.env', severity: 'high', exposed: true }],
+        exposed: [{ path: '/.env', label: '.env', severity: 'high', exposed: true }],
+      },
+    } as unknown as ReportInputs);
+
+    expect(r.verdict).toMatch(/read your data|walk through the front door/i);
+  });
+
+  it('keeps the clean verdict at A either way', () => {
+    const r = combineReport({
+      headers: { host: 'x.com', grade: 'A', score: 100, summary: 'ok', missing: [], checks: [] },
+    } as unknown as ReportInputs);
+    expect(r.verdict).toMatch(/locked down/i);
+  });
+
+  void build;
+  void headerFailure;
+  void exposedFile;
+});
+
+/**
+ * "CSP not set ✗" sitting directly above "CSP actually restricts scripts ✓" in
+ * the same panel reads as the tool contradicting itself, which costs more trust
+ * than the check earns.
+ */
+describe('csp-effective is not a green tick when there is no CSP', () => {
+  it('reports not-applicable instead of passing', () => {
+    const r = combineReport({
+      headers: {
+        host: 'x.com',
+        grade: 'F',
+        score: 21,
+        summary: 'weak',
+        missing: ['content-security-policy'],
+        checks: [
+          { key: 'content-security-policy', label: 'Content-Security-Policy', present: false, severity: 'high', note: '', fix: '' },
+          {
+            key: 'csp-effective',
+            label: 'Content-Security-Policy actually restricts scripts',
+            present: true,
+            notApplicable: true,
+            severity: 'medium',
+            note: '',
+            fix: '',
+          },
+        ],
+      },
+    } as unknown as ReportInputs);
+
+    const eff = r.categories[0].checks.find((c) => /actually restricts/.test(c.label))!;
+    expect(eff.pass).toBe(false);
+    expect(eff.graded).toBe(false); // shown, but cannot move the grade
+    expect(eff.detail).toMatch(/not applicable/i);
+    expect(severityCounts(r).medium).toBe(0); // and it is not counted as an issue
+  });
+});

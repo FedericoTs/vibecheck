@@ -16,6 +16,13 @@ export interface HeaderCheck {
   severity: Severity;
   note: string;
   fix: string;
+  /**
+   * The check could not apply — it depends on something that is absent, and the
+   * absence is already reported by another row. Shown as "not applicable"
+   * rather than a green tick, because a tick next to the row that says the thing
+   * is missing reads as the tool contradicting itself.
+   */
+  notApplicable?: boolean;
 }
 
 export interface HeadersScanResult {
@@ -170,8 +177,14 @@ export function gradeHeaders(rawHeaders: Record<string, string>, host = ''): Hea
     {
       key: 'csp-effective',
       label: 'Content-Security-Policy actually restricts scripts',
-      // Only meaningful once a CSP exists; without one the CSP check already fails.
+      // Only meaningful once a CSP exists, and the row above already fails when
+      // there is none — but rendering this as a green tick put "CSP not set" and
+      // "CSP actually restricts scripts ✓" next to each other in the same panel,
+      // which reads as the tool contradicting itself. Not-applicable is the
+      // honest state: it still cannot drag the score, and it no longer claims a
+      // protection that is absent.
       present: !h['content-security-policy'] ? true : cspIsMeaningful(h['content-security-policy']),
+      notApplicable: !h['content-security-policy'],
       severity: 'medium',
       note: "A CSP containing 'unsafe-inline' or 'unsafe-eval' permits the injection it exists to prevent.",
       fix: "Remove 'unsafe-inline' and 'unsafe-eval' from script-src; use nonces or hashes for any inline script.",

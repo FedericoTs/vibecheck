@@ -131,13 +131,49 @@ export function describeColumns(columns: string[]): string {
   return sensitive.length > 0 ? `${list} (personal data)` : list;
 }
 
-const VERDICT: Record<Grade, string> = {
+/**
+ * Categories where a failure means something was genuinely REACHABLE — a
+ * stranger got data, a file, a route or a key. Everything else in the security
+ * pillar is hardening: real, worth fixing, but not evidence that anything
+ * leaked.
+ */
+const EXPOSURE_KEYS = new Set(['supabase', 'firebase', 'secrets', 'paths', 'routes', 'ai', 'devserver']);
+
+/** Wording for a report where something was actually reachable. */
+const VERDICT_EXPOSED: Record<Grade, string> = {
   A: 'Locked down. Nothing a stranger can reach.',
   B: 'Solid — a couple of gaps worth closing.',
   C: 'Some real gaps. Worth a look before you share this app around.',
   D: 'Leaky. A curious visitor can get further than you think.',
   F: 'Wide open. Anyone can read your data or walk through the front door.',
 };
+
+/**
+ * Wording for a report where NOTHING was reachable and the failures are
+ * hardening only.
+ *
+ * This exists because the sentence above it was being printed at sites where it
+ * was simply untrue. A site can miss every response header while exposing no
+ * data, no files, no routes and no keys — and telling its owner "anyone can read
+ * your data" is a false accusation, which is the one thing this scanner must
+ * never make. The grade is unchanged; only the claim is corrected to match what
+ * was actually found.
+ */
+const VERDICT_HARDENING: Record<Grade, string> = {
+  A: 'Locked down. Nothing a stranger can reach.',
+  B: 'Nothing exposed. A couple of hardening gaps worth closing.',
+  C: 'Nothing exposed, but there are real hardening gaps to close.',
+  D: 'Nothing a stranger could read — but the headers that protect your visitors are missing.',
+  F: 'Nothing was exposed. What is missing are the response headers that protect your visitors from other sites.',
+};
+
+/** Pick the wording that matches what was actually found, not just the letter. */
+function verdictFor(grade: Grade, categories: ReportCategory[]): string {
+  const exposed = categories.some(
+    (c) => EXPOSURE_KEYS.has(c.key) && c.checks.some((k) => !k.pass && k.graded !== false),
+  );
+  return exposed ? VERDICT_EXPOSED[grade] : VERDICT_HARDENING[grade];
+}
 
 /**
  * The evidence builders return null when a value cannot be safely quoted; a
@@ -474,10 +510,19 @@ export function combineReport(inp: ReportInputs): Report {
     securityGrades.push(h.grade);
     const checks: CheckItem[] = h.checks.map((c) => ({
       label: c.label,
-      pass: c.present,
-      detail: c.present ? undefined : 'not set on your responses',
+      // A not-applicable check is neither a pass nor an accusation: it reuses the
+      // reported-not-graded state so it cannot move the grade in either
+      // direction, and it stops reading as a tick for a protection that is
+      // absent.
+      pass: c.notApplicable ? false : c.present,
+      graded: c.notApplicable ? false : undefined,
+      detail: c.notApplicable
+        ? 'not applicable — there is no Content-Security-Policy to evaluate'
+        : c.present
+          ? undefined
+          : 'not set on your responses',
       severity: c.severity,
-      evidence: c.present ? undefined : ev(headerEvidence(h.host, c.key)),
+      evidence: c.present || c.notApplicable ? undefined : ev(headerEvidence(h.host, c.key)),
     }));
     categories.push({ key: 'headers', group: 'security', label: 'Security headers', grade: h.grade, score: h.score, summary: h.summary, checks });
   }
@@ -678,7 +723,7 @@ export function combineReport(inp: ReportInputs): Report {
   const overallGrade = worstGrade(securityGrades);
   return {
     overallGrade,
-    verdict: VERDICT[overallGrade],
+    verdict: verdictFor(overallGrade, categories),
     issueCount,
     passed: all.filter((c) => c.pass).length,
     total: all.length,
