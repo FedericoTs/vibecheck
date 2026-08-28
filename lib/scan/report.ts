@@ -205,14 +205,11 @@ function unreachableCheck(label: string): CheckItem {
 export function combineReport(inp: ReportInputs): Report {
   const categories: ReportCategory[] = [];
   const securityGrades: Grade[] = [];
-  let issueCount = 0;
 
   // ── security (drives the headline grade), most-severe first ──────────
   const sb = inp.supabase;
   if (sb) {
     if (sb.ok) {
-      const exposed = sb.findings.filter((f) => f.exposed);
-      issueCount += exposed.length;
       securityGrades.push(sb.grade);
       const checks: CheckItem[] = sb.findings.length
         ? sb.findings.map((f) => ({
@@ -233,7 +230,6 @@ export function combineReport(inp: ReportInputs): Report {
       // Storage buckets
       if (sb.buckets?.checked) {
         const b = sb.buckets;
-        if (b.enumerable) issueCount += 1 + b.publicBuckets.length;
         checks.push({
           label: 'Storage buckets',
           pass: !b.enumerable,
@@ -263,7 +259,6 @@ export function combineReport(inp: ReportInputs): Report {
       if (sb.auth?.checked) {
         const a = sb.auth;
         const risky = a.autoConfirm && a.signupsOpen;
-        if (risky) issueCount += 1;
         checks.push({
           label: 'Email confirmation required for new accounts',
           pass: !risky,
@@ -282,7 +277,6 @@ export function combineReport(inp: ReportInputs): Report {
   }
   if (inp.firebase?.ok) {
     const f = inp.firebase;
-    issueCount += f.exposedCount + (f.rtdbOpen ? 1 : 0);
     securityGrades.push(f.grade);
     const checks: CheckItem[] = [];
     if (f.rtdbChecked) {
@@ -334,7 +328,6 @@ export function combineReport(inp: ReportInputs): Report {
     const s = inp.secrets;
     // Only findings that can move the grade count as issues. A localhost DSN is
     // reported, never counted — the same rule repo mode has always applied.
-    issueCount += s.findings.filter(isGradedSecret).length;
     securityGrades.push(s.grade);
     const checks: CheckItem[] = s.findings.length
       ? s.findings.map((f) => {
@@ -381,7 +374,6 @@ export function combineReport(inp: ReportInputs): Report {
     if (s.sourceMaps?.checked) {
       const sm = s.sourceMaps;
       const n = sm.exposed.length;
-      if (n > 0) issueCount += n;
       // Evidence-first, and precise about which of three states we are in: we
       // fetched and parsed a map; a map was referenced but did not resolve; or
       // nothing referenced one at all. The middle case used to be reported as a
@@ -423,13 +415,11 @@ export function combineReport(inp: ReportInputs): Report {
     if (lb.findings.length === 0) {
       checks.push({ label: `${lb.detected} librar${lb.detected === 1 ? 'y' : 'ies'} detected — no known vulnerabilities`, pass: true });
     }
-    issueCount += lb.findings.length;
     securityGrades.push(lb.grade);
     categories.push({ key: 'libs', group: 'security', label: 'Vulnerable libraries', grade: lb.grade, summary: lb.summary, checks });
   }
   if (inp.ai) {
     const a = inp.ai;
-    issueCount += a.exposed.length;
     securityGrades.push(a.grade);
     // Only surface what we learned something about; "absent" everywhere is noise.
     const interesting = a.findings.filter((f) => f.verdict !== 'absent');
@@ -450,7 +440,6 @@ export function combineReport(inp: ReportInputs): Report {
 
   if (inp.routes) {
     const r = inp.routes;
-    issueCount += r.exposed.length;
     securityGrades.push(r.grade);
     // Only report routes we actually learned something about — listing ten
     // "absent" paths would be noise, and "inconclusive" is not an accusation.
@@ -489,7 +478,6 @@ export function combineReport(inp: ReportInputs): Report {
 
   if (inp.paths) {
     const p = inp.paths;
-    issueCount += p.exposed.length;
     securityGrades.push(p.grade);
     const checks: CheckItem[] = p.findings.map((f) =>
       f.checked === false
@@ -506,7 +494,6 @@ export function combineReport(inp: ReportInputs): Report {
   }
   if (inp.headers) {
     const h = inp.headers;
-    issueCount += h.missing.length;
     securityGrades.push(h.grade);
     const checks: CheckItem[] = h.checks.map((c) => ({
       label: c.label,
@@ -536,7 +523,6 @@ export function combineReport(inp: ReportInputs): Report {
   // ── basics + performance (secondary — own grades, never drag security) ─
   if (inp.transport && inp.transport.checks.length > 0) {
     const t = inp.transport;
-    issueCount += t.failed.length;
     securityGrades.push(t.grade);
     const checks: CheckItem[] = t.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail, severity: c.severity, graded: c.graded }));
     categories.push({ key: 'transport', group: 'security', label: 'HTTPS & redirects', grade: t.grade, score: t.score, summary: t.summary, checks });
@@ -544,7 +530,6 @@ export function combineReport(inp: ReportInputs): Report {
 
   if (inp.email) {
     const e = inp.email;
-    issueCount += e.failed.length;
     securityGrades.push(e.grade);
     const checks: CheckItem[] = e.checks.map((c) => ({
       label: c.label,
@@ -570,7 +555,6 @@ export function combineReport(inp: ReportInputs): Report {
   if (inp.devServer && inp.devServer.verdict !== 'unknown') {
     const ds = inp.devServer;
     const found = ds.verdict === 'dev-artifacts';
-    if (found) issueCount += 1;
     securityGrades.push(found ? 'F' : 'A');
     categories.push({
       key: 'devserver',
@@ -599,7 +583,6 @@ export function combineReport(inp: ReportInputs): Report {
   if (inp.smuggling) {
     const sm = inp.smuggling;
     const n = sm.payloads.length;
-    if (n > 0) issueCount += n;
     const checks: CheckItem[] = [
       {
         label: 'No invisible instructions aimed at AI readers',
@@ -661,7 +644,6 @@ export function combineReport(inp: ReportInputs): Report {
     const sc = inp.scaffold;
     const hit = sc.finding;
     const graded = !!hit && hit.severity === 'warning';
-    if (graded) issueCount += 1;
     categories.push({
       key: 'scaffold',
       group: 'visibility',
@@ -725,12 +707,25 @@ export function combineReport(inp: ReportInputs): Report {
     categories.push({ key: 'lighthouse', group: 'performance', label: 'Performance & quality', grade: l.grade, summary: l.summary, checks });
   }
 
+  // issueCount is DERIVED, never accumulated.
+  //
+  // It used to be hand-incremented at sixteen call sites, and several of them
+  // added more than the number of rows they pushed: enumerable storage buckets
+  // added 1 + publicBuckets.length for a single check row, so a project with
+  // five public buckets reported "6 to fix" above a list containing one finding.
+  // A report whose own arithmetic disagrees with itself is not worth much, and
+  // the only number that can never drift is the one counted from what is on
+  // screen.
+  const derivedIssueCount = categories
+    .filter((c) => c.group === 'security')
+    .reduce((n, c) => n + c.checks.filter((k) => !k.pass && k.graded !== false).length, 0);
+
   const all = categories.flatMap((c) => c.checks);
   const overallGrade = worstGrade(securityGrades);
   return {
     overallGrade,
     verdict: verdictFor(overallGrade, categories),
-    issueCount,
+    issueCount: derivedIssueCount,
     passed: all.filter((c) => c.pass).length,
     total: all.length,
     categories,

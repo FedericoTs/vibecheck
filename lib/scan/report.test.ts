@@ -71,7 +71,7 @@ describe('combineReport', () => {
   });
 
   it('BASICS never drag the security headline grade', () => {
-    const r = combineReport({ headers: hdr({ grade: 'A', missing: [] }), fundamentals: fundamentals('F') });
+    const r = combineReport({ headers: hdr({ grade: 'A', missing: [], checks: [] }), fundamentals: fundamentals('F') });
     expect(r.overallGrade).toBe('A'); // security is A even though fundamentals is F
     const f = r.categories.find((c) => c.key === 'fundamentals');
     expect(f?.group).toBe('basics');
@@ -378,5 +378,46 @@ describe('csp-effective is not a green tick when there is no CSP', () => {
     expect(eff.graded).toBe(false); // shown, but cannot move the grade
     expect(eff.detail).toMatch(/not applicable/i);
     expect(severityCounts(r).medium).toBe(0); // and it is not counted as an issue
+  });
+});
+
+/**
+ * The number above the findings has to be the number of findings. It used to be
+ * accumulated separately at sixteen call sites, several of which added more than
+ * the rows they pushed — enumerable buckets added 1 + publicBuckets.length for a
+ * single row, so five public buckets reported "6 to fix" over a list of one.
+ */
+describe('issueCount is the number of findings actually shown', () => {
+  it('counts one bucket finding as one, however many buckets are public', () => {
+    const r = combineReport({
+      supabase: sb({
+        findings: [],
+        exposedCount: 0,
+        grade: 'C',
+        buckets: { checked: true, enumerable: true, publicBuckets: ['a', 'b', 'c', 'd', 'e'] },
+      }),
+    } as unknown as ReportInputs);
+
+    const rows = r.categories
+      .filter((c) => c.group === 'security')
+      .flatMap((c) => c.checks)
+      .filter((k) => !k.pass && k.graded !== false).length;
+
+    expect(r.issueCount).toBe(rows);
+  });
+
+  it('always equals the severity breakdown, which is drawn from the same rows', () => {
+    const r = combineReport({
+      supabase: sb(),
+      headers: hdr(),
+      fundamentals: fundamentals('F'),
+    });
+    const sev = severityCounts(r);
+    expect(sev.critical + sev.high + sev.medium + sev.low).toBe(r.issueCount);
+  });
+
+  it('never counts a non-security failure', () => {
+    const r = combineReport({ fundamentals: fundamentals('F') });
+    expect(r.issueCount).toBe(0);
   });
 });
