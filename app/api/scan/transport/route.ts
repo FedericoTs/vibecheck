@@ -114,7 +114,9 @@ async function probeRedirect(origin: string, param: string): Promise<boolean> {
   }
 }
 
-async function httpsEnforced(host: string): Promise<boolean | undefined> {
+type HttpBehaviour = 'https' | 'http-redirect' | 'plain';
+
+async function httpProbe(host: string): Promise<{ enforced?: boolean; behaviour?: HttpBehaviour }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -125,11 +127,14 @@ async function httpsEnforced(host: string): Promise<boolean | undefined> {
       headers: { 'user-agent': UA },
     });
     if (res.status >= 300 && res.status < 400) {
-      return (res.headers.get('location') ?? '').toLowerCase().startsWith('https://');
+      const to = (res.headers.get('location') ?? '').toLowerCase();
+      const secure = to.startsWith('https://');
+      return { enforced: secure, behaviour: secure ? 'https' : 'http-redirect' };
     }
-    return res.status < 400 ? false : undefined; // served over plain http, or unclear
+    // A 2xx over http means the page really is served in the clear.
+    return res.status < 400 ? { enforced: false, behaviour: 'plain' } : {};
   } catch {
-    return undefined; // http not reachable at all — nothing to report
+    return {}; // http not reachable at all — nothing to report
   } finally {
     clearTimeout(timer);
   }
@@ -200,7 +205,7 @@ export async function POST(request: Request): Promise<Response> {
 
   const [cert, enforced, redirects, takeover, legacyTls] = await Promise.all([
     inspectCert(target.hostname),
-    httpsEnforced(target.hostname),
+    httpProbe(target.hostname),
     Promise.all(REDIRECT_PARAMS.map(async (p) => ((await probeRedirect(target.origin, p)) ? p : null))),
     checkTakeover(target.hostname, target.origin),
     allowsLegacyTls(target.hostname),
@@ -211,7 +216,8 @@ export async function POST(request: Request): Promise<Response> {
     analyzeTransport(
       {
         cert,
-        httpsEnforced: enforced,
+        httpsEnforced: enforced.enforced,
+        httpBehaviour: enforced.behaviour,
         openRedirectParams: redirects.filter((p): p is string => !!p),
         redirectChecked: true,
         takeover,

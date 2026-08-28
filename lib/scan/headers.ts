@@ -136,8 +136,9 @@ export function gradeHeaders(rawHeaders: Record<string, string>, host = ''): Hea
       label: 'Strict-Transport-Security (HSTS)',
       present: (h['strict-transport-security'] ?? '').includes('max-age'),
       severity: 'high',
-      note: 'Forces HTTPS so traffic cannot be downgraded.',
-      fix: 'Add Strict-Transport-Security: max-age=31536000; includeSubDomains.',
+      note:
+        'Forces HTTPS so traffic cannot be downgraded. A domain in the browser HSTS preload list gets the same protection without the header, and that list is compiled into the browser rather than served, so it cannot be verified from outside.',
+      fix: 'Add Strict-Transport-Security: max-age=31536000; includeSubDomains. If this domain is already in the browser preload list, you have the protection already and this is tidiness rather than exposure.',
     },
     {
       key: 'x-frame-options',

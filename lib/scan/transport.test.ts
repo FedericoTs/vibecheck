@@ -89,3 +89,36 @@ describe('analyzeTransport', () => {
     expect(r.grade).toBe('A');
   });
 });
+
+/**
+ * Reported against google.com, where http 301s to another http URL. The old
+ * copy called that "served without redirecting", which was simply not what
+ * happened — and a report that misdescribes its own observation is worth less
+ * than one that stays quiet.
+ */
+describe('http behaviour is described accurately', () => {
+  const detail = (over: Partial<TransportFacts>) =>
+    analyzeTransport(facts(over), 'myapp.com', NOW).checks.find((c) => c.key === 'https-enforced')?.detail ?? '';
+
+  it('does not claim "no redirect" when there was a redirect', () => {
+    const d = detail({ httpsEnforced: false, httpBehaviour: 'http-redirect' });
+    expect(d).not.toMatch(/without redirecting/i);
+    expect(d).toMatch(/redirects, but to another http address/i);
+  });
+
+  it('names preload as the thing it cannot see, rather than ignoring it', () => {
+    expect(detail({ httpsEnforced: false, httpBehaviour: 'http-redirect' })).toMatch(/preload/i);
+  });
+
+  it('still says plainly when the page really is served over http', () => {
+    expect(detail({ httpsEnforced: false, httpBehaviour: 'plain' })).toMatch(/served over plain http/i);
+  });
+
+  it('is unchanged when http correctly upgrades', () => {
+    expect(detail({ httpsEnforced: true, httpBehaviour: 'https' })).toMatch(/redirected to https/i);
+  });
+
+  it('falls back safely when the route reports no behaviour', () => {
+    expect(detail({ httpsEnforced: false })).toMatch(/plain http/i);
+  });
+});

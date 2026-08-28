@@ -92,6 +92,12 @@ export interface TransportFacts {
   cert: CertFacts;
   /** did plain http:// redirect to https://? undefined = could not test. */
   httpsEnforced?: boolean;
+  /**
+   * What http:// actually did, when we could tell. A site that 301s to another
+   * http URL is not the same as one that serves the page over plain http, and
+   * calling both "served without redirecting" was simply wrong about the first.
+   */
+  httpBehaviour?: 'https' | 'http-redirect' | 'plain';
   /** query params that redirected off-site, e.g. ['next', 'redirect']. */
   openRedirectParams: string[];
   redirectChecked: boolean;
@@ -152,14 +158,24 @@ export function analyzeTransport(facts: TransportFacts, host: string, now = Date
   }
 
   if (facts.httpsEnforced !== undefined) {
+    // Three different things were being described by one sentence. Redirecting
+    // to another http URL is a real finding, but it is not "served without
+    // redirecting", and a report that misdescribes what it observed is worth
+    // less than one that says nothing.
+    const behaviour =
+      facts.httpBehaviour ?? (facts.httpsEnforced ? 'https' : 'plain');
+    const detail =
+      behaviour === 'https'
+        ? 'http requests are redirected to https'
+        : behaviour === 'http-redirect'
+          ? 'http redirects, but to another http address — the hop is still in the clear. Browsers that have this domain in their HSTS preload list upgrade it anyway, which we cannot see from out here.'
+          : 'the page is served over plain http — traffic can be read or modified in transit';
     checks.push({
       key: 'https-enforced',
       label: 'Plain http redirects to https',
       pass: facts.httpsEnforced,
       severity: 'medium',
-      detail: facts.httpsEnforced
-        ? 'http requests are redirected to https'
-        : 'http is served without redirecting — traffic can be read or modified in transit',
+      detail,
     });
   }
 
