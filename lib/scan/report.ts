@@ -524,7 +524,13 @@ export function combineReport(inp: ReportInputs): Report {
       severity: c.severity,
       evidence: c.present || c.notApplicable ? undefined : ev(headerEvidence(h.host, c.key)),
     }));
-    categories.push({ key: 'headers', group: 'security', label: 'Security headers', grade: h.grade, score: h.score, summary: h.summary, checks });
+    // Say where the headers came from when it is not where the user pointed us.
+    // Scanning an apex that only redirects is a common and reasonable thing to
+    // do, and silently reporting a different host's headers looks like a bug.
+    const headerSummary = h.redirected
+      ? `${h.summary} — measured on ${h.host} after ${h.requestedHost ?? 'the address you entered'} redirected there`
+      : h.summary;
+    categories.push({ key: 'headers', group: 'security', label: 'Security headers', grade: h.grade, score: h.score, summary: headerSummary, checks });
   }
 
   // ── basics + performance (secondary — own grades, never drag security) ─

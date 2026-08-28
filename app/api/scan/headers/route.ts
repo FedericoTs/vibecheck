@@ -26,8 +26,9 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   let response: Response;
+  let finalUrl: URL;
   try {
-    ({ response } = await safeFetch(target));
+    ({ response, url: finalUrl } = await safeFetch(target));
   } catch (e) {
     const msg = (e as Error).message;
     return NextResponse.json(
@@ -41,5 +42,16 @@ export async function POST(request: Request): Promise<Response> {
     headers[k] = v;
   });
 
-  return NextResponse.json(gradeHeaders(headers, target.host));
+  // The FINAL host, not the requested one. safeFetch follows redirects, so on a
+  // site whose apex redirects (google.com -> www.google.com) the headers we
+  // graded came from somewhere else entirely — and printing the requested URL as
+  // the reproduction meant the command returned the redirect's headers, not the
+  // ones the finding was about. A proof that does not reproduce is worse than no
+  // proof, because it invites the reader to conclude the tool is wrong.
+  const measured = gradeHeaders(headers, finalUrl.host);
+  return NextResponse.json({
+    ...measured,
+    requestedHost: target.host,
+    redirected: finalUrl.host !== target.host ? finalUrl.origin : undefined,
+  });
 }

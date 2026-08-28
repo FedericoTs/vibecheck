@@ -128,3 +128,17 @@ describe('cookie flags', () => {
     expect(cookiesLookSafe('')).toBe(true);
   });
 });
+
+/**
+ * safeFetch follows redirects, so on a site whose apex redirects the headers we
+ * grade come from a different host than the one that was typed. Labelling the
+ * result with the REQUESTED host meant the printed reproduction command fetched
+ * the redirect instead of the response the finding was about — a proof that does
+ * not reproduce, which invites the reader to conclude the tool is wrong.
+ */
+describe('headers are attributed to the host they were read from', () => {
+  it('uses the final host, so the evidence command reproduces the finding', () => {
+    const r = gradeHeaders({ 'x-frame-options': 'SAMEORIGIN' }, 'www.google.com');
+    expect(r.host).toBe('www.google.com');
+  });
+});

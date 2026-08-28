@@ -26,7 +26,12 @@ export interface HeaderCheck {
 }
 
 export interface HeadersScanResult {
+  /** The host the headers were actually READ FROM, after any redirects. */
   host: string;
+  /** What the user typed, when a redirect took us somewhere else. */
+  requestedHost?: string;
+  /** Origin we ended up on, set only when it differs from the request. */
+  redirected?: string;
   checks: HeaderCheck[];
   missing: HeaderCheck[];
   grade: Grade;
