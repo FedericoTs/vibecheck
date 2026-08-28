@@ -122,3 +122,39 @@ describe('http behaviour is described accurately', () => {
     expect(detail({ httpsEnforced: false })).toMatch(/plain http/i);
   });
 });
+
+/**
+ * "Certificate is current ✓ — expiry could not be read" asserted the one thing
+ * the same sentence said was unavailable. In a security report a false assurance
+ * is the worse direction to err, and a red cross would have been an unearned
+ * accusation, so it takes the third state.
+ */
+describe('an unreadable certificate expiry is not a pass', () => {
+  const certCheck = (validTo: string | undefined) =>
+    analyzeTransport(facts({ cert: { ...facts({}).cert, checked: true, validTo } }), 'myapp.com', NOW).checks.find(
+      (c) => c.key === 'cert-expiry',
+    )!;
+
+  it('is shown but not graded when expiry cannot be read', () => {
+    const c = certCheck(undefined);
+    expect(c.pass).toBe(false);
+    expect(c.graded).toBe(false);
+    expect(c.detail).toMatch(/could not be read/i);
+  });
+
+  it('does not drag the score down either', () => {
+    const unknown = analyzeTransport(
+      facts({ cert: { ...facts({}).cert, checked: true, validTo: undefined } }),
+      'myapp.com',
+      NOW,
+    );
+    const valid = analyzeTransport(facts({}), 'myapp.com', NOW);
+    expect(unknown.score).toBe(valid.score);
+  });
+
+  it('still fails plainly on a genuinely expired certificate', () => {
+    const c = certCheck(new Date(NOW - 5 * 86_400_000).toISOString());
+    expect(c.pass).toBe(false);
+    expect(c.graded).toBeUndefined(); // a real accusation, and counted
+  });
+});

@@ -24,6 +24,14 @@ export interface TransportCheck {
   pass: boolean;
   severity: 'high' | 'medium' | 'low';
   detail?: string;
+  /**
+   * False when a result is SHOWN but must not count in either direction —
+   * we could not determine it. A green tick for something we failed to measure
+   * is a false assurance, and in a security report that is the worse direction
+   * to err; a red cross would be an unearned accusation. This is the third
+   * state, and it is excluded from the score.
+   */
+  graded?: boolean;
 }
 
 export interface TransportResult {
@@ -114,7 +122,11 @@ export function analyzeTransport(facts: TransportFacts, host: string, now = Date
     checks.push({
       key: 'cert-expiry',
       label: 'Certificate is current',
-      pass: days === null ? true : days > 0,
+      // Unreadable expiry used to render as a green tick reading "Certificate is
+      // current — expiry could not be read", which asserts the one thing we just
+      // said we could not establish.
+      pass: days === null ? false : days > 0,
+      graded: days === null ? false : undefined,
       severity: 'high',
       detail:
         days === null
@@ -205,7 +217,8 @@ export function analyzeTransport(facts: TransportFacts, host: string, now = Date
     });
   }
 
-  const failed = checks.filter((c) => !c.pass);
+  // Undetermined results never move the score in either direction.
+  const failed = checks.filter((c) => !c.pass && c.graded !== false);
   const score = Math.max(0, 100 - failed.reduce((n, c) => n + PENALTY[c.severity], 0));
   return {
     host,

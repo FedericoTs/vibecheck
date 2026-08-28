@@ -27,6 +27,14 @@ export interface VisibilityCheck {
   pass: boolean;
   severity: 'high' | 'medium' | 'low';
   detail?: string;
+  /**
+   * False when a result is SHOWN but must not count in either direction —
+   * we could not determine it. A green tick for something we failed to measure
+   * is a false assurance, and in a security report that is the worse direction
+   * to err; a red cross would be an unearned accusation. This is the third
+   * state, and it is excluded from the score.
+   */
+  graded?: boolean;
 }
 
 export interface VisibilityResult {
@@ -296,7 +304,10 @@ export function analyzeVisibility(facts: VisibilityFacts, host = ''): Visibility
       return {
         key: 'readability',
         label: 'Readable prose (Flesch)',
-        pass: flesch === null ? true : flesch >= 30,
+        // "Readable prose ✓ — too little text to score" claimed a verdict we did
+        // not reach. Same third state as everywhere else.
+        pass: flesch === null ? false : flesch >= 30,
+        graded: flesch === null ? false : undefined,
         severity: 'low' as const,
         detail:
           flesch === null
@@ -362,7 +373,8 @@ export function analyzeVisibility(facts: VisibilityFacts, host = ''): Visibility
     },
   ];
 
-  const failed = checks.filter((c) => !c.pass);
+  // Undetermined results never move the score in either direction.
+  const failed = checks.filter((c) => !c.pass && c.graded !== false);
   const score = Math.max(0, 100 - failed.reduce((n, c) => n + PENALTY[c.severity], 0));
   return {
     host,

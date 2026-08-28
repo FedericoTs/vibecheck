@@ -538,7 +538,7 @@ export function combineReport(inp: ReportInputs): Report {
     const t = inp.transport;
     issueCount += t.failed.length;
     securityGrades.push(t.grade);
-    const checks: CheckItem[] = t.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail, severity: c.severity }));
+    const checks: CheckItem[] = t.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail, severity: c.severity, graded: c.graded }));
     categories.push({ key: 'transport', group: 'security', label: 'HTTPS & redirects', grade: t.grade, score: t.score, summary: t.summary, checks });
   }
 
@@ -687,7 +687,7 @@ export function combineReport(inp: ReportInputs): Report {
 
   if (inp.visibility) {
     const v = inp.visibility;
-    const checks = v.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail, severity: c.severity }));
+    const checks = v.checks.map((c) => ({ label: c.label, pass: c.pass, detail: c.detail, severity: c.severity, graded: c.graded }));
     categories.push({ key: 'visibility', group: 'visibility', label: 'AI & search visibility', grade: v.grade, score: v.score, summary: v.summary, checks });
   }
 
